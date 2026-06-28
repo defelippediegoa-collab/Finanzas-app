@@ -164,7 +164,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v7</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v8</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -795,9 +795,8 @@ async function cloudPull(silent){const url=$('#sync-url').value?.trim()||DB.sync
   try{const r=await fetch(url);const j=await r.json();
     if(j&&Array.isArray(j.tx)){
       const cloudTime=j.updatedAt||0;
-      if(cloudTime<localTime){ // tus datos locales son más nuevos: en vez de pisarlos, los subo
+      if(silent&&cloudTime<localTime){ // SOLO en automático: no pisar lo nuevo con lo viejo
         if(DB.syncUrl&&DB.syncAuto)cloudPush(true);
-        if(!silent)toast('Tus datos son más nuevos: los subí a la nube');
         return;}
       DB=normalize(j);DB.syncUrl=localUrl||url;DB.syncAuto=localAuto;DB.updatedAt=cloudTime;
       Store.save(DB);render();syncStatus();if(!silent)toast(DB.tx.length+' movimientos desde la nube ✓');}
