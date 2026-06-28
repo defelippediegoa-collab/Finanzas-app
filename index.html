@@ -163,6 +163,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v5</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -792,7 +793,7 @@ function syncStatus(){const u=DB.syncUrl;$('#sync-status').textContent=u?('Estad
 function openSync(){$('#menu').classList.remove('on');$('#sync-url').value=DB.syncUrl||'';$('#sync-auto').classList.toggle('on',!!DB.syncAuto);syncStatus();$('#syncScrim').classList.add('on');}
 $('#syncBtn').onclick=openSync;
 $('#closeSync').onclick=()=>$('#syncScrim').classList.remove('on');$('#syncScrim').onclick=e=>{if(e.target===$('#syncScrim'))$('#syncScrim').classList.remove('on');};
-$('#sync-auto').onclick=()=>$('#sync-auto').classList.toggle('on');
+$('#sync-auto').onclick=()=>{const on=!$('#sync-auto').classList.contains('on');$('#sync-auto').classList.toggle('on',on);DB.syncAuto=on;Store.save(DB);syncStatus();toast(on?'Sincronización automática activada':'Sincronización automática desactivada');};
 $('#syncSaveUrl').onclick=()=>{DB.syncUrl=$('#sync-url').value.trim();DB.syncAuto=$('#sync-auto').classList.contains('on');persist();syncStatus();toast('Configuración guardada');};
 async function cloudPush(silent){if(silent){if(!DB.syncUrl)return;}else{DB.syncUrl=$('#sync-url').value.trim()||DB.syncUrl;if(!DB.syncUrl){toast('Pegá primero la URL');return;}DB.syncAuto=$('#sync-auto').classList.contains('on');Store.save(DB);}
   if(!silent)$('#sync-status').textContent='Estado: subiendo…';
@@ -800,7 +801,7 @@ async function cloudPush(silent){if(silent){if(!DB.syncUrl)return;}else{DB.syncU
     if(j&&j.ok){const st=$('#sync-status');if(st)st.textContent='Estado: subido '+new Date().toLocaleString('es-AR');if(!silent)toast('Datos en la nube ✓');}else{const m=j&&j.error?(': '+j.error):'';const st=$('#sync-status');if(st)st.textContent='Estado: error'+m;if(!silent)toast('No se pudo subir'+m);}}
   catch(e){const st=$('#sync-status');if(st)st.textContent='Estado: error de conexión ('+(e.message||e)+')';if(!silent)toast('Revisá la URL y que esté publicada para "Cualquier persona"');}}
 async function cloudPull(silent){const url=$('#sync-url').value?.trim()||DB.syncUrl;if(!url){if(!silent)toast('Pegá primero la URL');return;}
-  const localTime=DB.updatedAt||0;
+  const localTime=DB.updatedAt||0,localAuto=DB.syncAuto,localUrl=DB.syncUrl;
   try{const r=await fetch(url);const j=await r.json();
     if(j&&Array.isArray(j.tx)){
       const cloudTime=j.updatedAt||0;
@@ -808,8 +809,7 @@ async function cloudPull(silent){const url=$('#sync-url').value?.trim()||DB.sync
         if(DB.syncUrl&&DB.syncAuto)cloudPush(true);
         if(!silent)toast('Tus datos son más nuevos: los subí a la nube');
         return;}
-      const auto=$('#sync-auto')?.classList.contains('on')??DB.syncAuto;
-      DB=normalize(j);DB.syncUrl=url;DB.syncAuto=auto;DB.updatedAt=cloudTime;
+      DB=normalize(j);DB.syncUrl=localUrl||url;DB.syncAuto=localAuto;DB.updatedAt=cloudTime;
       Store.save(DB);render();syncStatus();if(!silent)toast(DB.tx.length+' movimientos desde la nube ✓');}
     else if(!silent)toast('La nube está vacía; subí primero');}
   catch(e){if(!silent)toast('Sin conexión o URL inválida');}}
