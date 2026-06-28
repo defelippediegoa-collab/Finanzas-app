@@ -13,7 +13,7 @@
 <title>Mis Finanzas</title>
 <style>
   :root{--bg:#15171c;--bg2:#1c1f27;--line:#2a2e38;--txt:#f2f3f5;--muted:#8a8f99;--muted2:#646a75;
-    --accent:#f4685f;--income:#6b9bd1;--expense:#df7d7d;--warn:#f5c84a;
+    --accent:#f4685f;--income:#6a8cae;--expense:#cf8585;--warn:#e0bd6a;
     --c1:#f4685f;--c2:#f5a05a;--c3:#f5c84a;--c4:#f0e04a;--c5:#a8d84a;--c6:#5ac8c8;--c7:#9a8af0;}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
@@ -40,13 +40,19 @@
   .dayhead .dow{font-size:10px;background:#2c313c;color:#aab;padding:1px 6px;border-radius:4px;text-transform:uppercase}
   .dayhead .dm{font-size:12px;color:var(--muted)}
   .dayhead .tot{display:flex;gap:14px;font-size:13px;font-weight:600}
-  .tx{display:flex;align-items:center;padding:11px 16px;gap:10px;cursor:pointer}
+  .tx{display:flex;align-items:center;padding:10px 16px;gap:10px;cursor:pointer}
   .tx:active{background:#191c23}
   .tx .cat{flex:0 0 38%;min-width:0}
-  .tx .cn{font-size:13px;color:var(--muted)}
-  .tx .sn{font-size:13px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .tx .mid{flex:1;min-width:0;color:var(--txt);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .tx .amt{font-weight:600;font-size:14px;white-space:nowrap}
+  .tx .cn{font-size:11.5px;color:var(--muted)}
+  .tx .sn{font-size:11.5px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tx .mid{flex:1;min-width:0;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tx .amt{font-weight:600;font-size:12.5px;white-space:nowrap}
+  .detnav{display:flex;align-items:center;justify-content:center;gap:26px;padding:10px 16px;color:var(--txt);font-weight:600;font-size:14px}
+  .detnav button{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 8px;line-height:1}
+  .detsum{display:flex;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .detsum>div{flex:1;text-align:center;padding:9px 4px}
+  .detsum small{display:block;color:var(--muted);font-size:10.5px;margin-bottom:3px}
+  .detsum .sv{font-weight:600;font-size:12.5px}
   .badge{display:inline-block;font-size:10px;color:#cfd3da;background:#2c313c;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle}
   .badge.future{background:#23303a;color:var(--income)}
   .tabs{display:flex;border-bottom:1px solid var(--line)}
@@ -164,7 +170,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v8</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v9</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -509,7 +515,7 @@ function renderAccounts(){
     }
   });
   $('#accounts').innerHTML=html;
-  document.querySelectorAll('#accounts .arow').forEach(el=>el.onclick=()=>openAccountDetail(el.dataset.acc));
+  document.querySelectorAll('#accounts .arow').forEach(el=>el.onclick=()=>{detMonth=new Date(TODAY.getFullYear(),TODAY.getMonth(),1);openAccountDetail(el.dataset.acc);});
 }
 
 /* ---------- PROYECCION ---------- */
@@ -556,21 +562,31 @@ function showDetail(title){detail=true;$('#hdrMonth').classList.add('hidden');$(
   ['trans','stats','acc','proj'].forEach(id=>$('#view-'+id).classList.add('hidden'));$('#view-detail').classList.remove('hidden');}
 function closeDetail(){detail=null;detailRefresh=null;$('#hdrBack').classList.add('hidden');$('#hdrMonth').classList.remove('hidden');$('#view-detail').classList.add('hidden');setView(view);}
 $('#backBtn').onclick=closeDetail;
+let detMonth=null;
 function openAccountDetail(name){
-  const a=acct(name);const list=DB.tx.filter(t=>t.account===name||t.from===name||t.to===name).sort((x,y)=>y.date.localeCompare(x.date));
-  let h='',isCard=a&&a.type==='Tarjetas de crédito';
+  const a=acct(name);const isCard=a&&a.type==='Tarjetas de crédito';const c=a?a.currency:'ARS';
+  if(!detMonth)detMonth=new Date(TODAY.getFullYear(),TODAY.getMonth(),1);
+  const m=ym(detMonth);
+  const list=DB.tx.filter(t=>(t.account===name||t.from===name||t.to===name)&&ymOf(t.date)===m).sort((x,y)=>y.date.localeCompare(x.date));
+  let dep=0,ret=0;
+  list.forEach(t=>{if(t.type==='income'&&t.account===name)dep+=t.amount;else if(t.type==='expense'&&t.account===name)ret+=t.amount;else if(t.type==='transfer'){if(t.to===name)dep+=(t.amountTo!=null?t.amountTo:t.amount);if(t.from===name)ret+=t.amount;}});
+  let h='';
   if(isCard){const s=cardSaldos(name);const tot=-totalOwed(name);
-    h+='<div class="dhero"><div class="dl">'+name+' · deuda total</div><div class="dv neg">'+money(tot,a.currency)+'</div>'+
+    h+='<div class="dhero"><div class="dl">'+name+' · deuda total</div><div class="dv neg">'+money(tot,c)+'</div>'+
       '<div style="display:flex;gap:18px;margin-top:10px">'+
-      '<div><div class="dl">A pagar (este mes)</div><div style="font-weight:700;color:var(--expense)">'+money(s.aPagar,a.currency)+'</div></div>'+
-      '<div><div class="dl">Restante (mes que viene)</div><div style="font-weight:700;color:var(--expense)">'+money(s.restante,a.currency)+'</div></div></div></div>';
+      '<div><div class="dl">A pagar (este mes)</div><div style="font-weight:700;color:var(--expense)">'+money(s.aPagar,c)+'</div></div>'+
+      '<div><div class="dl">Restante (mes que viene)</div><div style="font-weight:700;color:var(--expense)">'+money(s.restante,c)+'</div></div></div></div>';
     h+='<div class="editbtn" id="payCardBtn" style="background:var(--accent);color:#fff;border:none">Pagar tarjeta (liquidación)</div>';
-  } else {const b=liveBalance(name);h+='<div class="dhero"><div class="dl">'+name+(a?(' · '+a.type):'')+'</div><div class="dv '+sgn(b)+'">'+money(b,a?a.currency:'ARS')+'</div></div>';}
+  } else {const b=liveBalance(name);h+='<div class="dhero"><div class="dl">'+name+(a?(' · '+a.type):'')+'</div><div class="dv '+sgn(b)+'">'+money(b,c)+'</div></div>';}
   h+='<div class="editbtn" id="editAccBtn">Editar cuenta</div>';
-  h+=list.length?dayGroups(list):'<div class="empty">Sin movimientos en esta cuenta.</div>';
+  h+='<div class="detnav"><button id="detPrev">‹</button><span>'+monthName(detMonth)+'</span><button id="detNext">›</button></div>';
+  h+='<div class="detsum"><div><small>Depósito</small><div class="sv pos">'+money(dep,c)+'</div></div><div><small>Retiro</small><div class="sv neg">'+money(ret,c)+'</div></div><div><small>Balance</small><div class="sv '+sgn(dep-ret)+'">'+money(dep-ret,c)+'</div></div></div>';
+  h+=list.length?dayGroups(list):'<div class="empty" style="padding:22px">Sin movimientos en '+monthName(detMonth)+'.</div>';
   $('#detailBody').innerHTML=h;showDetail(name);detailRefresh=()=>openAccountDetail(name);
   $('#editAccBtn').onclick=()=>openAcc(name);
   if(isCard)$('#payCardBtn').onclick=()=>payCard(name);
+  $('#detPrev').onclick=()=>{detMonth=new Date(detMonth.getFullYear(),detMonth.getMonth()-1,1);openAccountDetail(name);};
+  $('#detNext').onclick=()=>{detMonth=new Date(detMonth.getFullYear(),detMonth.getMonth()+1,1);openAccountDetail(name);};
   bindTx('#detailBody');
 }
 function payCard(name){const s=cardSaldos(name);const amt=s.aPagar||totalOwed(name);
@@ -658,7 +674,7 @@ $('#saveTx').onclick=()=>{
   else{const sub=$('#f-sub').value==='—'?'':$('#f-sub').value;const accName=$('#f-account').value;const card=isCard(accName);const base={type:fType,account:accName,category:$('#f-category').value,sub,currency:curOf(accName),note:$('#f-note').value||''};
     if(fType==='expense'&&card&&fPay==='inst'){const n=Math.max(2,parseInt($('#f-inst').value)||2),per=Math.round(amt/n*100)/100;const pd=new Date(date+'T12:00:00');const[fy,fm]=$('#f-due').value.split('-').map(Number);
       for(let i=0;i<n;i++){const imp=new Date(pd.getFullYear(),pd.getMonth()+i,pd.getDate());const pay=new Date(fy,fm-1+i,1);
-        DB.tx.push({...base,id:'u'+Date.now()+'_'+i,date:imp.toISOString().slice(0,10),amount:per,dueMonth:ym(pay),purchaseDate:date,inst:[i+1,n]});}}
+        DB.tx.push({...base,id:'u'+Date.now()+'_'+i,date:imp.toISOString().slice(0,10),amount:per,dueMonth:ym(pay),purchaseDate:date,inst:[i+1,n],note:(base.note?base.note+' ':'')+'('+(i+1)+'/'+n+')'});}}
     else if(fType==='expense'&&card&&fPay==='sub'){DB.reminders.push({id:'r'+Date.now(),type:'expense',name:(sub||$('#f-category').value||'Suscripción'),amount:amt,freq:'monthly',from:$('#f-subfrom').value,until:'',account:accName,category:$('#f-category').value});persist();$('#scrim').classList.remove('on');setView('proj');toast('Suscripción agregada a recordatorios');return;}
     else{const rec={...base,id:'u'+Date.now(),date,amount:amt};if(fType==='expense'&&card){rec.dueMonth=$('#f-paymonth').value;rec.purchaseDate=date;}DB.tx.push(rec);}}
   persist();$('#scrim').classList.remove('on');cur=new Date(+date.slice(0,4),+date.slice(5,7)-1,1);render();toast('Guardado');
