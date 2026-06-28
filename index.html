@@ -371,6 +371,7 @@ const $=s=>document.querySelector(s);
 function curPrefix(c){return c==='ARS'?'$ ':(c==='USD'?'US$ ':c+' ');}
 function money(n,c){c=c||'ARS';return(n<0?'-':'')+curPrefix(c)+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function sgn(n){return Math.abs(n)<0.005?'zero':(n>0?'pos':'neg');}
+function dz(n){return Math.abs(n)<0.005?'zero':'neg';}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function refreshNoteSuggestions(){const seen=new Set();DB.tx.forEach(t=>{const n=(t.note||'').trim();if(n)seen.add(n);});const list=[...seen].sort((a,b)=>a.localeCompare(b,'es'));const dl=$('#note-suggestions');if(dl)dl.innerHTML=list.map(n=>'<option value="'+esc(n)+'"></option>').join('');}
 function ym(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
@@ -484,8 +485,8 @@ function renderAccounts(){
   GROUP_ORDER.forEach(g=>{const accs=groups[g];if(!accs)return;
     if(g==='Tarjetas de crédito'){
       let tp=0,tr=0;accs.forEach(a=>{const s=cardSaldos(a.name);if(a.currency==='ARS'){tp+=s.aPagar;tr+=s.restante;}});
-      html+='<div class="grp"><div class="gh cards"><span>'+g+'</span><div class="twocol"><div class="c"><small>A pagar · este mes</small><span class="'+sgn(tp)+'">'+money(tp)+'</span></div><div class="c"><small>Restante · mes que viene</small><span class="'+sgn(tr)+'">'+money(tr)+'</span></div></div></div>';
-      accs.forEach(a=>{const s=cardSaldos(a.name);html+='<div class="arow" data-acc="'+a.name+'"><span class="an">'+a.name+'</span><div class="twocol"><span class="av '+sgn(s.aPagar)+' v">'+money(s.aPagar,a.currency)+'</span><span class="av '+sgn(s.restante)+' v">'+money(s.restante,a.currency)+'</span></div></div>';});
+      html+='<div class="grp"><div class="gh cards"><span>'+g+'</span><div class="twocol"><div class="c"><small>A pagar · este mes</small><span class="'+dz(tp)+'">'+money(tp)+'</span></div><div class="c"><small>Restante · mes que viene</small><span class="'+dz(tr)+'">'+money(tr)+'</span></div></div></div>';
+      accs.forEach(a=>{const s=cardSaldos(a.name);html+='<div class="arow" data-acc="'+a.name+'"><span class="an">'+a.name+'</span><div class="twocol"><span class="av '+dz(s.aPagar)+' v">'+money(s.aPagar,a.currency)+'</span><span class="av '+dz(s.restante)+' v">'+money(s.restante,a.currency)+'</span></div></div>';});
       html+='</div>';
     }else{
       const gt={};accs.forEach(a=>{gt[a.currency]=(gt[a.currency]||0)+liveBalance(a.name);});
