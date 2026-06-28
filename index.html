@@ -151,6 +151,7 @@
   </div>
   <div class="menu" id="menu">
     <button id="remindersBtn">Recordatorios</button>
+    <button id="pasteRemBtn">Pegar recordatorios de Claude</button>
     <button id="newAccBtn">Nueva cuenta</button>
     <button id="catsBtn">Categorías y subcategorías</button>
     <button id="rateBtn">Cotización dólar</button>
@@ -252,6 +253,14 @@
   <div class="swrow"><div><div class="tl">Incluir en mi total</div><div class="ts">Apagalo para cuentas de ahorro que no querés sumar a tu capital.</div></div><div class="sw on" id="ac-include"></div></div>
   <button class="save" id="saveAcc">Guardar</button>
   <button class="del hidden" id="delAcc">Eliminar cuenta</button>
+</div></div>
+
+<!-- PASTE REMINDERS (from Claude) -->
+<div class="scrim" id="pasteScrim"><div class="sheet">
+  <h3><span>Pegar recordatorios de Claude</span><button class="x" id="closePaste">×</button></h3>
+  <div class="hint" style="padding:0 18px 8px">Pedile a Claude tus recordatorios, copiá el código que te da y pegalo acá. Se agregan sin borrar nada de lo que ya tenés.</div>
+  <div class="fld"><textarea id="paste-text" rows="7" style="width:100%;box-sizing:border-box;background:var(--bg2);color:var(--txt);border:1px solid var(--line);border-radius:11px;padding:12px;font-family:monospace;font-size:13px" placeholder='[ {"type":"expense","name":"Edenor","amount":50000,"freq":"monthly","from":"2026-07","category":"Gastos Fijos","sub":"Luz"} ]'></textarea></div>
+  <button class="save" id="addPaste">Agregar recordatorios</button>
 </div></div>
 
 <!-- REMINDER SHEET -->
@@ -516,7 +525,10 @@ function renderProjMonths(){
     const fut=DB.tx.filter(t=>t.type!=='transfer'&&isARS(t)&&monthOf(t)===m&&((t.type==='expense'&&isCard(t.account))||new Date(t.date+'T12:00:00')>TODAY));
     const rems=DB.reminders.filter(r=>remActiveIn(r,m));
     const items=[
-      ...fut.map(t=>({type:t.type,amt:t.amount,cat:t.category||'Otros',sub:t.sub||'—',note:((t.note||'').trim()||'—')+((t.type==='expense'&&isCard(t.account))?(' · '+t.account):'')})),
+      ...fut.map(t=>{const card=(t.type==='expense'&&isCard(t.account));return {type:t.type,amt:t.amount,
+        cat:card?'💳 Vencimientos tarjeta':(t.category||'Otros'),
+        sub:card?t.account:(t.sub||'—'),
+        note:((t.note||'').trim()||'—')+(t.inst?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'')};}),
       ...rems.map(r=>({type:r.type,amt:r.amount,cat:r.category||'Recordatorios',sub:r.sub||'—',note:(r.name||'recordatorio')+' (recordatorio)'}))
     ];
     let inc=0,exp=0;items.forEach(it=>{if(it.type==='income')inc+=it.amt;else exp+=it.amt;});running+=inc-exp;
@@ -744,6 +756,23 @@ $('#rateFetch').onclick=async()=>{toast('Consultando Banco Nación...');try{cons
 
 /* ---------- reminders shortcut ---------- */
 $('#remindersBtn').onclick=()=>{$('#menu').classList.remove('on');setView('proj');toast('Tus recordatorios');};
+$('#pasteRemBtn').onclick=()=>{$('#menu').classList.remove('on');$('#paste-text').value='';$('#pasteScrim').classList.add('on');};
+$('#closePaste').onclick=()=>$('#pasteScrim').classList.remove('on');
+$('#pasteScrim').onclick=e=>{if(e.target===$('#pasteScrim'))$('#pasteScrim').classList.remove('on');};
+$('#addPaste').onclick=()=>{
+  let raw=$('#paste-text').value.trim();if(!raw){toast('Pegá el código primero');return;}
+  let data;try{data=JSON.parse(raw);}catch(e){toast('El código no es válido, copialo completo de Claude');return;}
+  if(!Array.isArray(data))data=[data];
+  const nextM=ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));let n=0;
+  data.forEach(r=>{
+    if(!r||!r.name||!(parseFloat(r.amount)>0))return;
+    DB.reminders.push({id:'r'+Date.now()+'_'+(n++),type:(r.type==='income'?'income':'expense'),name:String(r.name),
+      amount:parseFloat(r.amount),freq:(r.freq==='once'?'once':'monthly'),from:r.from||nextM,until:r.until||'',
+      account:r.account||'',category:r.category||'',sub:r.sub||''});
+  });
+  if(!n){toast('No encontré recordatorios válidos');return;}
+  persist();$('#pasteScrim').classList.remove('on');setView('proj');toast(n+(n===1?' recordatorio agregado':' recordatorios agregados'));
+};
 
 /* ---------- cloud sync (Google Sheets via Apps Script) ---------- */
 function syncStatus(){const u=DB.syncUrl;$('#sync-status').textContent=u?('Estado: configurado'+(DB.syncAuto?' · auto':'')):'Estado: sin configurar';}
