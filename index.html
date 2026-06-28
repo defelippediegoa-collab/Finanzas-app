@@ -82,15 +82,16 @@
   .mline{padding:9px 16px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
   .mline .mlv{font-weight:600}.mline.exp .mlv{color:var(--expense)}.mline.inc .mlv{color:var(--income)}
   .pjtree{padding:2px 0 4px}
-  .pjg{border-top:1px solid var(--line)}
-  .pjg>summary,.pjsub>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 16px}
-  .pjg>summary::-webkit-details-marker,.pjsub>summary::-webkit-details-marker{display:none}
-  .pjg>summary::before,.pjsub>summary::before{content:'▸';color:var(--muted2);font-size:9px;transition:transform .15s}
-  .pjg[open]>summary::before,.pjsub[open]>summary::before{transform:rotate(90deg)}
-  .pjg>summary .rl{flex:1;font-weight:600;font-size:.95em}
-  .pjsub{margin-left:12px;border-top:1px solid var(--line)}
-  .pjsub>summary .rl{flex:1;color:var(--muted);font-weight:500;font-size:.9em}
-  .pjnote{display:flex;justify-content:space-between;gap:8px;padding:6px 16px 6px 36px;font-size:.86em;color:var(--muted)}
+  .pjbranch{border-top:1px solid var(--line)}
+  .pjbranch>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 14px}
+  .pjbranch>summary::-webkit-details-marker{display:none}
+  .pjbranch>summary::before{content:'▸';color:var(--muted2);font-size:9px;transition:transform .15s;flex:0 0 auto}
+  .pjbranch[open]>summary::before{transform:rotate(90deg)}
+  .pjbranch>summary .rl{flex:1;font-weight:600;font-size:.95em}
+  .pjbranch .pjbranch{margin-left:13px}
+  .pjbranch .pjbranch>summary .rl{color:var(--muted);font-weight:500;font-size:.92em}
+  .pjleaf{display:flex;justify-content:space-between;gap:8px;padding:6px 14px 6px 24px;font-size:.86em;color:var(--muted)}
+  .pjbranch .pjleaf{margin-left:13px}
   .pjamt{font-weight:600;white-space:nowrap}
   .remrow{display:flex;align-items:center;justify-content:space-between;margin:0 16px 8px;padding:12px 14px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;cursor:pointer}
   .remrow .rn{font-weight:600}.remrow .rs{font-size:12px;color:var(--muted);margin-top:2px}
@@ -163,7 +164,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v5</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v6</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -520,6 +521,13 @@ function renderReminders(){
   document.querySelectorAll('.remrow').forEach(el=>el.onclick=()=>openRem(el.dataset.id));
   renderProjMonths();
 }
+function pjTreeHTML(kids){
+  return Object.entries(kids).sort((a,b)=>b[1].total-a[1].total).map(([key,node])=>{
+    const cls=node.type==='income'?'pos':'neg',amt='<span class="pjamt '+cls+'">'+(node.type==='income'?'+':'−')+money(node.total)+'</span>';
+    if(Object.keys(node.kids).length)return '<details class="pjbranch"><summary><span class="rl">'+esc(key)+'</span>'+amt+'</summary>'+pjTreeHTML(node.kids)+'</details>';
+    return '<div class="pjleaf"><span>'+esc(key)+'</span>'+amt+'</div>';
+  }).join('');
+}
 function renderProjMonths(){
   const now=liquidNow();$('#pj-now').textContent=money(now);$('#pj-now').className='big '+sgn(now);
   const start=new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1);let running=now,html='';
@@ -530,32 +538,14 @@ function renderProjMonths(){
     const futOther=DB.tx.filter(t=>!isCard(t.account)&&t.type!=='transfer'&&isARS(t)&&ymOf(t.date)===m&&new Date(t.date+'T12:00:00')>TODAY);
     const rems=DB.reminders.filter(r=>remActiveIn(r,m));
     const items=[
-      ...futCard.map(t=>({type:'expense',amt:t.amount,cat:'💳 Vencimientos tarjeta',sub:t.account,note:((t.note||'').trim()||'—')+(t.inst?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'')})),
-      ...futOther.map(t=>({type:t.type,amt:t.amount,cat:t.category||'Otros',sub:t.sub||'—',note:((t.note||'').trim()||'—')})),
-      ...rems.map(r=>({type:r.type,amt:remAmount(r,m),cat:r.category||'Recordatorios',sub:r.sub||'—',note:(r.name||'recordatorio')+' (recordatorio)'}))
+      ...futCard.map(t=>{const nt=((t.note||'').trim()||'—');const lab=nt+(t.inst&&!/\(\d+\/\d+\)/.test(nt)?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'');return {type:'expense',amt:t.amount,path:['💳 '+t.account, t.category||'Otros', t.sub||'—', lab]};}),
+      ...futOther.map(t=>({type:t.type,amt:t.amount,path:[t.category||'Otros', t.sub||'—', ((t.note||'').trim()||'—')]})),
+      ...rems.map(r=>({type:r.type,amt:remAmount(r,m),path:[r.category||'Recordatorios', r.sub||'—', (r.name||'recordatorio')+' (recordatorio)']}))
     ];
     let inc=0,exp=0;items.forEach(it=>{if(it.type==='income')inc+=it.amt;else exp+=it.amt;});running+=inc-exp;
-    const tree={};
-    items.forEach(it=>{
-      if(!tree[it.cat])tree[it.cat]={type:it.type,total:0,subs:{}};
-      tree[it.cat].total+=it.amt;
-      const S=tree[it.cat].subs;if(!S[it.sub])S[it.sub]={total:0,notes:{}};
-      S[it.sub].total+=it.amt;S[it.sub].notes[it.note]=(S[it.sub].notes[it.note]||0)+it.amt;
-    });
-    const sign=ty=>ty==='income'?'+':'−';
-    let lines='<div class="pjtree">';
-    Object.entries(tree).sort((a,b)=>b[1].total-a[1].total).forEach(([cat,cd])=>{
-      const cls=cd.type==='income'?'pos':'neg';
-      lines+='<details class="pjg"><summary><span class="rl">'+esc(cat)+'</span><span class="pjamt '+cls+'">'+sign(cd.type)+money(cd.total)+'</span></summary>';
-      Object.entries(cd.subs).sort((a,b)=>b[1].total-a[1].total).forEach(([sub,sd])=>{
-        lines+='<details class="pjsub"><summary><span class="rl">'+esc(sub)+'</span><span class="pjamt '+cls+'">'+sign(cd.type)+money(sd.total)+'</span></summary>';
-        Object.entries(sd.notes).sort((a,b)=>b[1]-a[1]).forEach(([nt,v])=>{lines+='<div class="pjnote"><span>'+esc(nt)+'</span><span class="pjamt '+cls+'">'+sign(cd.type)+money(v)+'</span></div>';});
-        lines+='</details>';
-      });
-      lines+='</details>';
-    });
-    lines+='</div>';
-    if(!items.length)lines='<div class="mline"><span>Sin movimientos proyectados</span><span></span></div>';
+    const root={};
+    items.forEach(it=>{let node=root;it.path.forEach(key=>{if(!node[key])node[key]={total:0,type:it.type,kids:{}};node[key].total+=it.amt;node=node[key].kids;});});
+    let lines=items.length?('<div class="pjtree">'+pjTreeHTML(root)+'</div>'):'<div class="mline"><span>Sin movimientos proyectados</span><span></span></div>';
     html+='<div class="mcard"><div class="mh"><span class="mn">'+monthName(dd)+'</span><span class="mb '+sgn(running)+'">'+money(running)+'</span></div><div class="mbody"><div class="mc"><div class="ml">Ingresos</div><div class="mv '+sgn(inc)+'">'+money(inc)+'</div></div><div class="mc"><div class="ml">Gastos</div><div class="mv '+sgn(exp)+'">'+money(exp)+'</div></div><div class="mc"><div class="ml">Neto</div><div class="mv '+sgn(inc-exp)+'">'+money(inc-exp)+'</div></div></div>'+lines+'</div>';
   }
   $('#pj-months').innerHTML=html;
