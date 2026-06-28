@@ -248,7 +248,10 @@
   <div class="extra hidden" id="ac-cardextra"><div class="row2" style="padding:6px 18px">
     <div><label style="font-size:12px;color:var(--muted)">Saldo a pagar (este mes)</label><input type="number" id="ac-apagar" placeholder="0"></div>
     <div><label style="font-size:12px;color:var(--muted)">Saldo restante</label><input type="number" id="ac-restante" placeholder="0"></div>
-  </div><div class="hint" style="padding:0 18px">Estos son los saldos actuales de la tarjeta. Los movimientos nuevos se suman solos.</div></div>
+  </div><div class="row2" style="padding:6px 18px 0">
+    <div><label style="font-size:12px;color:var(--muted)">Vencimiento próximo $ (proyección)</label><input type="number" id="ac-proxvenc" placeholder="0"></div>
+    <div><label style="font-size:12px;color:var(--muted)">Mes del vencimiento</label><input type="month" id="ac-proxvencmes"></div>
+  </div><div class="hint" style="padding:0 18px">Lo que vas a pagar de esta tarjeta y en qué mes; así aparece en la proyección.</div></div>
   <div class="fld"><label>Descripción (opcional)</label><input id="ac-desc" placeholder=""></div>
   <div class="swrow"><div><div class="tl">Incluir en mi total</div><div class="ts">Apagalo para cuentas de ahorro que no querés sumar a tu capital.</div></div><div class="sw on" id="ac-include"></div></div>
   <button class="save" id="saveAcc">Guardar</button>
@@ -258,7 +261,7 @@
 <!-- PASTE REMINDERS (from Claude) -->
 <div class="scrim" id="pasteScrim"><div class="sheet">
   <h3><span>Pegar recordatorios de Claude</span><button class="x" id="closePaste">×</button></h3>
-  <div class="hint" style="padding:0 18px 8px">Pedile a Claude tus recordatorios, copiá el código que te da y pegalo acá. Se agregan sin borrar nada de lo que ya tenés.</div>
+  <div class="hint" style="padding:0 18px 8px">Pedile a Claude tus recordatorios o el ajuste de vencimientos de tarjeta, copiá el código que te da y pegalo acá. Se agrega sin borrar nada de lo que ya tenés.</div>
   <div class="fld"><textarea id="paste-text" rows="7" style="width:100%;box-sizing:border-box;background:var(--bg2);color:var(--txt);border:1px solid var(--line);border-radius:11px;padding:12px;font-family:monospace;font-size:13px" placeholder='[ {"type":"expense","name":"Edenor","amount":50000,"freq":"monthly","from":"2026-07","category":"Gastos Fijos","sub":"Luz"} ]'></textarea></div>
   <button class="save" id="addPaste">Agregar recordatorios</button>
 </div></div>
@@ -274,6 +277,7 @@
   <div class="fld"><label>Cuenta asociada (opcional)</label><select id="r-account"></select></div>
   <div class="fld"><label>Categoría (opcional)</label><select id="r-category"></select></div>
   <div class="fld"><label>Subcategoría (opcional)</label><select id="r-sub"></select></div>
+  <div class="fld"><label>Cambios de monto (opcional)</label><div id="r-changes"></div><button id="addChange" type="button" class="editbtn" style="margin-top:6px;width:100%;background:var(--bg2);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:9px;cursor:pointer">+ Cambio de monto desde un mes</button><div class="hint" style="padding:6px 0 0">Ej: el importe sube en septiembre. Se aplica a ese mes y a todos los siguientes.</div></div>
   <button class="save" id="saveRem">Guardar recordatorio</button>
   <button class="del hidden" id="delRem">Eliminar recordatorio</button>
 </div></div>
@@ -512,6 +516,7 @@ function renderAccounts(){
 /* ---------- PROYECCION ---------- */
 function liquidNow(){let s=0;DB.accounts.forEach(a=>{if(a.currency==='ARS'&&(a.type==='Efectivo'||a.type==='Cuentas'||a.type==='Tarjetas de débito'))s+=liveBalance(a.name);});return s;}
 function remActiveIn(r,m){if(r.from&&m<r.from)return false;if(r.freq==='once')return m===r.from;if(r.until&&m>r.until)return false;return true;}
+function remAmount(r,m){let amt=r.amount;if(Array.isArray(r.changes)){r.changes.filter(c=>c&&c.from&&c.amount>0).sort((a,b)=>a.from<b.from?-1:1).forEach(c=>{if(m>=c.from)amt=c.amount;});}return amt;}
 function renderReminders(){
   $('#reminders').innerHTML=DB.reminders.length?DB.reminders.map(r=>{const freq=r.freq==='monthly'?'cada mes':'una vez';const acc=r.account?(' · '+r.account):'';const ct=r.sub?(' · '+r.sub):(r.category?(' · '+r.category):'');return '<div class="remrow" data-id="'+r.id+'"><div><div class="rn">'+r.name+'</div><div class="rs">'+freq+(r.from?' desde '+r.from:'')+ct+acc+'</div></div><div class="amt '+(r.type==='income'?'pos':'neg')+'">'+(r.type==='income'?'+':'−')+money(r.amount)+'</div></div>';}).join(''):'<div class="empty" style="padding:16px 24px">Sin recordatorios. Agregá el gas, el sueldo o tus suscripciones.</div>';
   document.querySelectorAll('.remrow').forEach(el=>el.onclick=()=>openRem(el.dataset.id));
@@ -520,16 +525,20 @@ function renderReminders(){
 function renderProjMonths(){
   const now=liquidNow();$('#pj-now').textContent=money(now);$('#pj-now').className='big '+sgn(now);
   const start=new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1);let running=now,html='';
+  const defVenc=ym(start);
   for(let i=0;i<6;i++){const dd=new Date(start.getFullYear(),start.getMonth()+i,1),m=ym(dd);
-    const monthOf=t=>(t.type==='expense'&&isCard(t.account))?payMonthOf(t):ymOf(t.date);
-    const fut=DB.tx.filter(t=>t.type!=='transfer'&&isARS(t)&&monthOf(t)===m&&((t.type==='expense'&&isCard(t.account))||new Date(t.date+'T12:00:00')>TODAY));
+    // movimientos futuros: consumos NUEVOS de tarjeta (por mes de pago) y todo lo no-tarjeta a futuro
+    const futCardNew=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&!t.hist&&isARS(t)&&payMonthOf(t)===m);
+    const futOther=DB.tx.filter(t=>!isCard(t.account)&&t.type!=='transfer'&&isARS(t)&&ymOf(t.date)===m&&new Date(t.date+'T12:00:00')>TODAY);
+    // vencimientos de tarjeta cargados (lo que realmente pagás)
+    const vencs=DB.accounts.filter(a=>a.type==='Tarjetas de crédito'&&a.proxVenc>0&&(a.proxVencMes||defVenc)===m)
+      .map(a=>({type:'expense',amt:toARS(a.proxVenc,a.currency),cat:'💳 Vencimientos tarjeta',sub:a.name,note:'Vencimiento del mes'}));
     const rems=DB.reminders.filter(r=>remActiveIn(r,m));
     const items=[
-      ...fut.map(t=>{const card=(t.type==='expense'&&isCard(t.account));return {type:t.type,amt:t.amount,
-        cat:card?'💳 Vencimientos tarjeta':(t.category||'Otros'),
-        sub:card?t.account:(t.sub||'—'),
-        note:((t.note||'').trim()||'—')+(t.inst?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'')};}),
-      ...rems.map(r=>({type:r.type,amt:r.amount,cat:r.category||'Recordatorios',sub:r.sub||'—',note:(r.name||'recordatorio')+' (recordatorio)'}))
+      ...futCardNew.map(t=>({type:'expense',amt:t.amount,cat:'💳 Vencimientos tarjeta',sub:t.account,note:((t.note||'').trim()||'—')+(t.inst?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'')})),
+      ...futOther.map(t=>({type:t.type,amt:t.amount,cat:t.category||'Otros',sub:t.sub||'—',note:((t.note||'').trim()||'—')})),
+      ...vencs,
+      ...rems.map(r=>({type:r.type,amt:remAmount(r,m),cat:r.category||'Recordatorios',sub:r.sub||'—',note:(r.name||'recordatorio')+' (recordatorio)'}))
     ];
     let inc=0,exp=0;items.forEach(it=>{if(it.type==='income')inc+=it.amt;else exp+=it.amt;});running+=inc-exp;
     const tree={};
@@ -694,6 +703,7 @@ function openAcc(name){
   const a=name?acct(name):null;$('#ac-type').value=a?a.type:'Cuentas';$('#ac-name').value=a?a.name:'';$('#ac-initial').value=a?(a.initial||0):'';$('#ac-desc').value=a?(a.desc||''):'';
   acCur=a?a.currency:'ARS';renderCurPick();
   $('#ac-apagar').value=a&&a.saldoAPagar!=null?a.saldoAPagar:'';$('#ac-restante').value=a&&a.saldoRestante!=null?a.saldoRestante:'';
+  $('#ac-proxvenc').value=a&&a.proxVenc?a.proxVenc:'';$('#ac-proxvencmes').value=a&&a.proxVencMes?a.proxVencMes:ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));
   $('#ac-include').classList.toggle('on',!a||a.includeInTotal!==false);
   toggleCardExtra();$('#accScrim').classList.add('on');
 }
@@ -705,7 +715,7 @@ $('#closeAcc').onclick=()=>$('#accScrim').classList.remove('on');$('#accScrim').
 $('#saveAcc').onclick=()=>{
   const name=$('#ac-name').value.trim();if(!name){toast('Poné un nombre');return;}
   const obj={name,type:$('#ac-type').value,currency:acCur,initial:parseFloat($('#ac-initial').value)||0,desc:$('#ac-desc').value.trim(),includeInTotal:$('#ac-include').classList.contains('on')};
-  if(obj.type==='Tarjetas de crédito'){obj.saldoAPagar=parseFloat($('#ac-apagar').value)||0;obj.saldoRestante=parseFloat($('#ac-restante').value)||0;obj.initial=-(obj.saldoAPagar+obj.saldoRestante);}
+  if(obj.type==='Tarjetas de crédito'){obj.saldoAPagar=parseFloat($('#ac-apagar').value)||0;obj.saldoRestante=parseFloat($('#ac-restante').value)||0;obj.initial=-(obj.saldoAPagar+obj.saldoRestante);obj.proxVenc=parseFloat($('#ac-proxvenc').value)||0;obj.proxVencMes=$('#ac-proxvencmes').value||'';}
   if(accEditName){const a=acct(accEditName);if(accEditName!==name){DB.tx.forEach(t=>{if(t.account===accEditName)t.account=name;if(t.from===accEditName)t.from=name;if(t.to===accEditName)t.to=name;});DB.reminders.forEach(r=>{if(r.account===accEditName)r.account=name;});}Object.assign(a,obj);}
   else{if(acct(name)){toast('Ya existe esa cuenta');return;}DB.accounts.push(obj);}
   persist();$('#accScrim').classList.remove('on');if(detail)closeDetail();setView('acc');toast('Cuenta guardada');
@@ -721,7 +731,14 @@ function openRem(id){remEditId=id||null;$('#remTitle').textContent=id?'Editar re
   refreshRemSub(r&&r.sub?r.sub:'—');
   $('#r-name').value=r?r.name:'';$('#r-amount').value=r?r.amount:'';$('#r-freq').value=r?r.freq:'monthly';
   $('#r-from').value=r&&r.from?r.from:ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));$('#r-until').value=r&&r.until?r.until:'';
-  fill($('#r-account'),['— sin cuenta —',...accountNames()],r&&r.account?r.account:'— sin cuenta —');$('#remScrim').classList.add('on');}
+  fill($('#r-account'),['— sin cuenta —',...accountNames()],r&&r.account?r.account:'— sin cuenta —');
+  remChanges=(r&&Array.isArray(r.changes))?r.changes.map(c=>({from:c.from||'',amount:c.amount||''})):[];renderRemChanges();
+  $('#remScrim').classList.add('on');}
+let remChanges=[];
+function renderRemChanges(){const box=$('#r-changes');box.innerHTML=remChanges.map((c,i)=>'<div class="row2" style="padding:0 0 6px;gap:8px"><input type="month" data-i="'+i+'" data-k="from" value="'+(c.from||'')+'" style="flex:1"><input type="number" data-i="'+i+'" data-k="amount" value="'+(c.amount||'')+'" placeholder="nuevo importe" style="flex:1"><button type="button" data-del="'+i+'" class="chip cx" style="border:1px solid var(--line);border-radius:8px">×</button></div>').join('');
+  box.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{const i=+inp.dataset.i,k=inp.dataset.k;remChanges[i][k]=k==='amount'?(parseFloat(inp.value)||''):inp.value;});
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{remChanges.splice(+b.dataset.del,1);renderRemChanges();});}
+$('#addChange').onclick=()=>{remChanges.push({from:'',amount:''});renderRemChanges();};
 function refreshRemSub(sel){const cat=$('#r-category').value;const list=(cat&&cat!=='—'&&DB.subs[cat])?DB.subs[cat]:[];fill($('#r-sub'),['—',...list],sel||'—');}
 $('#r-category').onchange=()=>refreshRemSub('—');
 document.querySelectorAll('#remTypeSeg button').forEach(b=>b.onclick=()=>{rType=b.dataset.t;document.querySelectorAll('#remTypeSeg button').forEach(x=>x.classList.toggle('on',x===b));fill($('#r-category'),['—',...DB.cats[rType==='income'?'income':'expense']]);refreshRemSub('—');});
@@ -729,6 +746,7 @@ $('#addRem').onclick=()=>openRem(null);$('#closeRem').onclick=()=>$('#remScrim')
 $('#saveRem').onclick=()=>{const name=$('#r-name').value.trim(),amt=parseFloat($('#r-amount').value);if(!name){toast('Poné un nombre');return;}if(!amt||amt<=0){toast('Poné un importe');return;}
   const acc=$('#r-account').value==='— sin cuenta —'?'':$('#r-account').value;const cat=$('#r-category').value==='—'?'':$('#r-category').value;const sub=$('#r-sub').value==='—'?'':$('#r-sub').value;
   const obj={type:rType,name,amount:amt,freq:$('#r-freq').value,from:$('#r-from').value,until:$('#r-until').value,account:acc,category:cat,sub};
+  const ch=remChanges.filter(c=>c.from&&parseFloat(c.amount)>0).map(c=>({from:c.from,amount:parseFloat(c.amount)}));obj.changes=ch;
   if(remEditId)Object.assign(DB.reminders.find(x=>x.id===remEditId),obj);else{obj.id='r'+Date.now();DB.reminders.push(obj);}
   persist();$('#remScrim').classList.remove('on');renderReminders();toast('Guardado');};
 $('#delRem').onclick=()=>{if(remEditId&&confirm('¿Eliminar recordatorio?')){DB.reminders=DB.reminders.filter(x=>x.id!==remEditId);persist();$('#remScrim').classList.remove('on');renderReminders();toast('Eliminado');}};
@@ -762,16 +780,22 @@ $('#pasteScrim').onclick=e=>{if(e.target===$('#pasteScrim'))$('#pasteScrim').cla
 $('#addPaste').onclick=()=>{
   let raw=$('#paste-text').value.trim();if(!raw){toast('Pegá el código primero');return;}
   let data;try{data=JSON.parse(raw);}catch(e){toast('El código no es válido, copialo completo de Claude');return;}
-  if(!Array.isArray(data))data=[data];
-  const nextM=ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));let n=0;
-  data.forEach(r=>{
-    if(!r||!r.name||!(parseFloat(r.amount)>0))return;
-    DB.reminders.push({id:'r'+Date.now()+'_'+(n++),type:(r.type==='income'?'income':'expense'),name:String(r.name),
-      amount:parseFloat(r.amount),freq:(r.freq==='once'?'once':'monthly'),from:r.from||nextM,until:r.until||'',
-      account:r.account||'',category:r.category||'',sub:r.sub||''});
-  });
-  if(!n){toast('No encontré recordatorios válidos');return;}
-  persist();$('#pasteScrim').classList.remove('on');setView('proj');toast(n+(n===1?' recordatorio agregado':' recordatorios agregados'));
+  let rems=[],cardVenc=null,vencMonth='';
+  if(Array.isArray(data))rems=data;
+  else if(data&&typeof data==='object'){
+    if(Array.isArray(data.reminders))rems=data.reminders;
+    if(data.cardVenc&&typeof data.cardVenc==='object'){cardVenc=data.cardVenc;vencMonth=data.vencMonth||'';}
+    if(!rems.length&&!cardVenc&&data.name)rems=[data];
+  }
+  const nextM=ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));let nR=0,nC=0;
+  rems.forEach(r=>{if(!r||!r.name||!(parseFloat(r.amount)>0))return;
+    const obj={id:'r'+Date.now()+'_'+(nR++),type:(r.type==='income'?'income':'expense'),name:String(r.name),amount:parseFloat(r.amount),freq:(r.freq==='once'?'once':'monthly'),from:r.from||nextM,until:r.until||'',account:r.account||'',category:r.category||'',sub:r.sub||''};
+    if(Array.isArray(r.changes))obj.changes=r.changes.filter(c=>c&&c.from&&parseFloat(c.amount)>0).map(c=>({from:c.from,amount:parseFloat(c.amount)}));
+    DB.reminders.push(obj);});
+  if(cardVenc){const mm=vencMonth||nextM;Object.entries(cardVenc).forEach(([name,amt])=>{const a=acct(name);if(a&&a.type==='Tarjetas de crédito'&&parseFloat(amt)>0){a.proxVenc=parseFloat(amt);a.proxVencMes=mm;nC++;}});}
+  if(!nR&&!nC){toast('No encontré nada válido para agregar');return;}
+  persist();$('#pasteScrim').classList.remove('on');setView('proj');
+  toast(((nR?nR+' recordatorio(s) ':'')+(nC?(nR?'· ':'')+nC+' tarjeta(s)':'')+' ✓').trim());
 };
 
 /* ---------- cloud sync (Google Sheets via Apps Script) ---------- */
