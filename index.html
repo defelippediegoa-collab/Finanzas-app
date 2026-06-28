@@ -164,7 +164,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v6</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v7</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -806,7 +806,7 @@ async function cloudPull(silent){const url=$('#sync-url').value?.trim()||DB.sync
 $('#syncPush').onclick=()=>cloudPush(false);$('#syncPull').onclick=()=>cloudPull(false);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&DB.syncUrl&&DB.syncAuto)cloudPull(true);});
 
-persist();setView('trans');
+Store.save(DB);setView('trans');
 if(DB.syncUrl&&DB.syncAuto)cloudPull(true);
 if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){navigator.serviceWorker.register('sw.js').catch(()=>{});}
 </script>
