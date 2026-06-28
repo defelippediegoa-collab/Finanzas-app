@@ -248,10 +248,7 @@
   <div class="extra hidden" id="ac-cardextra"><div class="row2" style="padding:6px 18px">
     <div><label style="font-size:12px;color:var(--muted)">Saldo a pagar (este mes)</label><input type="number" id="ac-apagar" placeholder="0"></div>
     <div><label style="font-size:12px;color:var(--muted)">Saldo restante</label><input type="number" id="ac-restante" placeholder="0"></div>
-  </div><div class="row2" style="padding:6px 18px 0">
-    <div><label style="font-size:12px;color:var(--muted)">Vencimiento próximo $ (proyección)</label><input type="number" id="ac-proxvenc" placeholder="0"></div>
-    <div><label style="font-size:12px;color:var(--muted)">Mes del vencimiento</label><input type="month" id="ac-proxvencmes"></div>
-  </div><div class="hint" style="padding:0 18px">Lo que vas a pagar de esta tarjeta y en qué mes; así aparece en la proyección.</div></div>
+  </div><div class="hint" style="padding:0 18px">Estos son los saldos actuales de la tarjeta. Los movimientos nuevos se suman solos.</div></div>
   <div class="fld"><label>Descripción (opcional)</label><input id="ac-desc" placeholder=""></div>
   <div class="swrow"><div><div class="tl">Incluir en mi total</div><div class="ts">Apagalo para cuentas de ahorro que no querés sumar a tu capital.</div></div><div class="sw on" id="ac-include"></div></div>
   <button class="save" id="saveAcc">Guardar</button>
@@ -261,7 +258,7 @@
 <!-- PASTE REMINDERS (from Claude) -->
 <div class="scrim" id="pasteScrim"><div class="sheet">
   <h3><span>Pegar recordatorios de Claude</span><button class="x" id="closePaste">×</button></h3>
-  <div class="hint" style="padding:0 18px 8px">Pedile a Claude tus recordatorios o el ajuste de vencimientos de tarjeta, copiá el código que te da y pegalo acá. Se agrega sin borrar nada de lo que ya tenés.</div>
+  <div class="hint" style="padding:0 18px 8px">Pedile a Claude tus recordatorios, copiá el código que te da y pegalo acá. Se agregan sin borrar nada de lo que ya tenés.</div>
   <div class="fld"><textarea id="paste-text" rows="7" style="width:100%;box-sizing:border-box;background:var(--bg2);color:var(--txt);border:1px solid var(--line);border-radius:11px;padding:12px;font-family:monospace;font-size:13px" placeholder='[ {"type":"expense","name":"Edenor","amount":50000,"freq":"monthly","from":"2026-07","category":"Gastos Fijos","sub":"Luz"} ]'></textarea></div>
   <button class="save" id="addPaste">Agregar recordatorios</button>
 </div></div>
@@ -353,7 +350,7 @@ function normalize(d){
   if(Array.isArray(d))d={tx:d};
   d.tx=d.tx||[];d.reminders=d.reminders||[];d.currencies=d.currencies||['ARS','USD'];
   if(typeof d.usdRate!=='number')d.usdRate=1000;d.rateInfo=d.rateInfo||'';
-  d.syncUrl=d.syncUrl||'';if(d.syncAuto===undefined)d.syncAuto=false;
+  d.syncUrl=d.syncUrl||'';if(d.syncAuto===undefined)d.syncAuto=false;d.updatedAt=d.updatedAt||0;
   d.cats=d.cats||JSON.parse(JSON.stringify(DEF_CATS));d.subs=d.subs||JSON.parse(JSON.stringify(DEF_SUBS));
   d.accounts=d.accounts||[];
   const known=new Set(d.accounts.map(a=>a.name));
@@ -393,7 +390,7 @@ function monthName(d){return d.toLocaleDateString('es-AR',{month:'short',year:'n
 function cssv(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 function colorFor(c,i){return cssv(CAT_COLOR[c]||PALETTE[i%PALETTE.length]);}
 let _pushT=null;
-function persist(){Store.save(DB);if(DB.syncUrl&&DB.syncAuto){clearTimeout(_pushT);_pushT=setTimeout(()=>cloudPush(true),2500);}}
+function persist(){DB.updatedAt=Date.now();Store.save(DB);if(DB.syncUrl&&DB.syncAuto){clearTimeout(_pushT);_pushT=setTimeout(()=>cloudPush(true),2500);}}
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),1800);}
 function acct(n){return DB.accounts.find(a=>a.name===n);}
 function curOf(n){const a=acct(n);return a?a.currency:'ARS';}
@@ -525,19 +522,15 @@ function renderReminders(){
 function renderProjMonths(){
   const now=liquidNow();$('#pj-now').textContent=money(now);$('#pj-now').className='big '+sgn(now);
   const start=new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1);let running=now,html='';
-  const defVenc=ym(start);
   for(let i=0;i<6;i++){const dd=new Date(start.getFullYear(),start.getMonth()+i,1),m=ym(dd);
-    // movimientos futuros: consumos NUEVOS de tarjeta (por mes de pago) y todo lo no-tarjeta a futuro
-    const futCardNew=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&!t.hist&&isARS(t)&&payMonthOf(t)===m);
+    // vencimientos de tarjeta = cuotas/consumos cuyo MES DE PAGO cae en este mes (las vas corrigiendo vos)
+    const futCard=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&isARS(t)&&payMonthOf(t)===m);
+    // resto a futuro (sueldos, préstamos, gastos no-tarjeta)
     const futOther=DB.tx.filter(t=>!isCard(t.account)&&t.type!=='transfer'&&isARS(t)&&ymOf(t.date)===m&&new Date(t.date+'T12:00:00')>TODAY);
-    // vencimientos de tarjeta cargados (lo que realmente pagás)
-    const vencs=DB.accounts.filter(a=>a.type==='Tarjetas de crédito'&&a.proxVenc>0&&(a.proxVencMes||defVenc)===m)
-      .map(a=>({type:'expense',amt:toARS(a.proxVenc,a.currency),cat:'💳 Vencimientos tarjeta',sub:a.name,note:'Vencimiento del mes'}));
     const rems=DB.reminders.filter(r=>remActiveIn(r,m));
     const items=[
-      ...futCardNew.map(t=>({type:'expense',amt:t.amount,cat:'💳 Vencimientos tarjeta',sub:t.account,note:((t.note||'').trim()||'—')+(t.inst?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'')})),
+      ...futCard.map(t=>({type:'expense',amt:t.amount,cat:'💳 Vencimientos tarjeta',sub:t.account,note:((t.note||'').trim()||'—')+(t.inst?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'')})),
       ...futOther.map(t=>({type:t.type,amt:t.amount,cat:t.category||'Otros',sub:t.sub||'—',note:((t.note||'').trim()||'—')})),
-      ...vencs,
       ...rems.map(r=>({type:r.type,amt:remAmount(r,m),cat:r.category||'Recordatorios',sub:r.sub||'—',note:(r.name||'recordatorio')+' (recordatorio)'}))
     ];
     let inc=0,exp=0;items.forEach(it=>{if(it.type==='income')inc+=it.amt;else exp+=it.amt;});running+=inc-exp;
@@ -646,7 +639,7 @@ function openSheet(id,preset){
   refreshNoteSuggestions();
   document.querySelectorAll('#paySeg button').forEach(b=>b.classList.toggle('on',b.dataset.p==='once'));
   refreshType();
-  if(t&&t.type!=='transfer'){fill($('#f-category'),DB.cats[t.type==='income'?'income':'expense'],t.category);refreshSub(t.sub);fill($('#f-account'),accountNames(),t.account);if(t.dueMonth)$('#f-paymonth').value=t.dueMonth;}
+  if(t&&t.type!=='transfer'){fill($('#f-category'),DB.cats[t.type==='income'?'income':'expense'],t.category);refreshSub(t.sub);fill($('#f-account'),accountNames(),t.account);if(t.type==='expense'&&isCard(t.account))$('#f-paymonth').value=t.dueMonth||ymOf(t.date);}
   if(fType==='transfer'){fill($('#f-account'),accountNames(),t?t.from:(preset?preset.from:undefined));fill($('#f-to'),accountNames(),t?t.to:(preset?preset.to:undefined));}
   refreshPayUI();refreshFx();setAmtLabel();$('#scrim').classList.add('on');
 }
@@ -703,7 +696,6 @@ function openAcc(name){
   const a=name?acct(name):null;$('#ac-type').value=a?a.type:'Cuentas';$('#ac-name').value=a?a.name:'';$('#ac-initial').value=a?(a.initial||0):'';$('#ac-desc').value=a?(a.desc||''):'';
   acCur=a?a.currency:'ARS';renderCurPick();
   $('#ac-apagar').value=a&&a.saldoAPagar!=null?a.saldoAPagar:'';$('#ac-restante').value=a&&a.saldoRestante!=null?a.saldoRestante:'';
-  $('#ac-proxvenc').value=a&&a.proxVenc?a.proxVenc:'';$('#ac-proxvencmes').value=a&&a.proxVencMes?a.proxVencMes:ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));
   $('#ac-include').classList.toggle('on',!a||a.includeInTotal!==false);
   toggleCardExtra();$('#accScrim').classList.add('on');
 }
@@ -715,7 +707,7 @@ $('#closeAcc').onclick=()=>$('#accScrim').classList.remove('on');$('#accScrim').
 $('#saveAcc').onclick=()=>{
   const name=$('#ac-name').value.trim();if(!name){toast('Poné un nombre');return;}
   const obj={name,type:$('#ac-type').value,currency:acCur,initial:parseFloat($('#ac-initial').value)||0,desc:$('#ac-desc').value.trim(),includeInTotal:$('#ac-include').classList.contains('on')};
-  if(obj.type==='Tarjetas de crédito'){obj.saldoAPagar=parseFloat($('#ac-apagar').value)||0;obj.saldoRestante=parseFloat($('#ac-restante').value)||0;obj.initial=-(obj.saldoAPagar+obj.saldoRestante);obj.proxVenc=parseFloat($('#ac-proxvenc').value)||0;obj.proxVencMes=$('#ac-proxvencmes').value||'';}
+  if(obj.type==='Tarjetas de crédito'){obj.saldoAPagar=parseFloat($('#ac-apagar').value)||0;obj.saldoRestante=parseFloat($('#ac-restante').value)||0;obj.initial=-(obj.saldoAPagar+obj.saldoRestante);}
   if(accEditName){const a=acct(accEditName);if(accEditName!==name){DB.tx.forEach(t=>{if(t.account===accEditName)t.account=name;if(t.from===accEditName)t.from=name;if(t.to===accEditName)t.to=name;});DB.reminders.forEach(r=>{if(r.account===accEditName)r.account=name;});}Object.assign(a,obj);}
   else{if(acct(name)){toast('Ya existe esa cuenta');return;}DB.accounts.push(obj);}
   persist();$('#accScrim').classList.remove('on');if(detail)closeDetail();setView('acc');toast('Cuenta guardada');
@@ -780,22 +772,19 @@ $('#pasteScrim').onclick=e=>{if(e.target===$('#pasteScrim'))$('#pasteScrim').cla
 $('#addPaste').onclick=()=>{
   let raw=$('#paste-text').value.trim();if(!raw){toast('Pegá el código primero');return;}
   let data;try{data=JSON.parse(raw);}catch(e){toast('El código no es válido, copialo completo de Claude');return;}
-  let rems=[],cardVenc=null,vencMonth='';
+  let rems=[];
   if(Array.isArray(data))rems=data;
   else if(data&&typeof data==='object'){
     if(Array.isArray(data.reminders))rems=data.reminders;
-    if(data.cardVenc&&typeof data.cardVenc==='object'){cardVenc=data.cardVenc;vencMonth=data.vencMonth||'';}
-    if(!rems.length&&!cardVenc&&data.name)rems=[data];
+    else if(data.name)rems=[data];
   }
-  const nextM=ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));let nR=0,nC=0;
+  const nextM=ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));let nR=0;
   rems.forEach(r=>{if(!r||!r.name||!(parseFloat(r.amount)>0))return;
     const obj={id:'r'+Date.now()+'_'+(nR++),type:(r.type==='income'?'income':'expense'),name:String(r.name),amount:parseFloat(r.amount),freq:(r.freq==='once'?'once':'monthly'),from:r.from||nextM,until:r.until||'',account:r.account||'',category:r.category||'',sub:r.sub||''};
     if(Array.isArray(r.changes))obj.changes=r.changes.filter(c=>c&&c.from&&parseFloat(c.amount)>0).map(c=>({from:c.from,amount:parseFloat(c.amount)}));
     DB.reminders.push(obj);});
-  if(cardVenc){const mm=vencMonth||nextM;Object.entries(cardVenc).forEach(([name,amt])=>{const a=acct(name);if(a&&a.type==='Tarjetas de crédito'&&parseFloat(amt)>0){a.proxVenc=parseFloat(amt);a.proxVencMes=mm;nC++;}});}
-  if(!nR&&!nC){toast('No encontré nada válido para agregar');return;}
-  persist();$('#pasteScrim').classList.remove('on');setView('proj');
-  toast(((nR?nR+' recordatorio(s) ':'')+(nC?(nR?'· ':'')+nC+' tarjeta(s)':'')+' ✓').trim());
+  if(!nR){toast('No encontré recordatorios válidos');return;}
+  persist();$('#pasteScrim').classList.remove('on');setView('proj');toast(nR+(nR===1?' recordatorio agregado':' recordatorios agregados'));
 };
 
 /* ---------- cloud sync (Google Sheets via Apps Script) ---------- */
@@ -811,8 +800,17 @@ async function cloudPush(silent){if(silent){if(!DB.syncUrl)return;}else{DB.syncU
     if(j&&j.ok){const st=$('#sync-status');if(st)st.textContent='Estado: subido '+new Date().toLocaleString('es-AR');if(!silent)toast('Datos en la nube ✓');}else{const m=j&&j.error?(': '+j.error):'';const st=$('#sync-status');if(st)st.textContent='Estado: error'+m;if(!silent)toast('No se pudo subir'+m);}}
   catch(e){const st=$('#sync-status');if(st)st.textContent='Estado: error de conexión ('+(e.message||e)+')';if(!silent)toast('Revisá la URL y que esté publicada para "Cualquier persona"');}}
 async function cloudPull(silent){const url=$('#sync-url').value?.trim()||DB.syncUrl;if(!url){if(!silent)toast('Pegá primero la URL');return;}
+  const localTime=DB.updatedAt||0;
   try{const r=await fetch(url);const j=await r.json();
-    if(j&&Array.isArray(j.tx)){const auto=$('#sync-auto')?.classList.contains('on')??DB.syncAuto;DB=normalize(j);DB.syncUrl=url;DB.syncAuto=auto;persist();render();syncStatus();if(!silent)toast(DB.tx.length+' movimientos desde la nube ✓');}
+    if(j&&Array.isArray(j.tx)){
+      const cloudTime=j.updatedAt||0;
+      if(cloudTime<localTime){ // tus datos locales son más nuevos: en vez de pisarlos, los subo
+        if(DB.syncUrl&&DB.syncAuto)cloudPush(true);
+        if(!silent)toast('Tus datos son más nuevos: los subí a la nube');
+        return;}
+      const auto=$('#sync-auto')?.classList.contains('on')??DB.syncAuto;
+      DB=normalize(j);DB.syncUrl=url;DB.syncAuto=auto;DB.updatedAt=cloudTime;
+      Store.save(DB);render();syncStatus();if(!silent)toast(DB.tx.length+' movimientos desde la nube ✓');}
     else if(!silent)toast('La nube está vacía; subí primero');}
   catch(e){if(!silent)toast('Sin conexión o URL inválida');}}
 $('#syncPush').onclick=()=>cloudPush(false);$('#syncPull').onclick=()=>cloudPull(false);
