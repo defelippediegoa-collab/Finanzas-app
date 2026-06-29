@@ -27,6 +27,8 @@
   .back button{background:none;border:none;color:var(--txt);font-size:24px;cursor:pointer;line-height:1}
   .topbtn{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:6px}
   .strip,.acctsum{display:flex;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .hidsum{display:flex;justify-content:space-between;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);background:#191c23}
+  .hidsum span:last-child{font-weight:700}
   .strip .cell,.acctsum .cell{flex:1;text-align:center;padding:11px 4px}
   .strip .lbl,.acctsum .lbl{font-size:12px;color:var(--muted);margin-bottom:3px}
   .strip .val,.acctsum .val{font-size:15px;font-weight:600}
@@ -170,7 +172,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v14</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v15</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -199,6 +201,7 @@
       <div class="cell"><div class="lbl">A deber</div><div class="val neg" id="a-debt">0.00</div></div>
       <div class="cell"><div class="lbl">Balance</div><div class="val" id="a-bal">0.00</div></div>
     </div>
+    <div class="hidsum hidden" id="a-hidden-wrap"><span>Cuentas ocultas (aparte)</span><span id="a-hidden">0.00</span></div>
     <div id="accounts"></div>
   </div>
 
@@ -538,13 +541,14 @@ function cardSaldos(name){
 function renderAccounts(){
   // groups
   const groups={};DB.accounts.forEach(a=>{const g=TYPE_GROUP[a.type]||'Otras';(groups[g]=groups[g]||[]).push(a);});
-  let capA=0,debtA=0;
-  DB.accounts.forEach(a=>{if(a.includeInTotal===false)return;const raw=a.type==='Tarjetas de crédito'?totalOwed(a.name):liveBalance(a.name);const b=toARS(raw,a.currency);if(b==null)return;if(b>=0)capA+=b;else debtA+=b;});
+  let capA=0,debtA=0,hidA=0;
+  DB.accounts.forEach(a=>{const raw=a.type==='Tarjetas de crédito'?totalOwed(a.name):liveBalance(a.name);const b=toARS(raw,a.currency);if(b==null)return;if(a.includeInTotal===false){hidA+=b;return;}if(b>=0)capA+=b;else debtA+=b;});
   $('#a-cap').textContent=money(capA);$('#a-debt').textContent=money(Math.abs(debtA));$('#a-bal').textContent=money(capA+debtA);$('#a-bal').className='val '+sgn(capA+debtA);
+  const hw=$('#a-hidden-wrap');if(hidA!==0){hw.classList.remove('hidden');$('#a-hidden').textContent=money(hidA);$('#a-hidden').className=sgn(hidA);}else hw.classList.add('hidden');
   let html='';
   GROUP_ORDER.forEach(g=>{const accs=groups[g];if(!accs)return;
     if(g==='Tarjetas de crédito'){
-      let tp=0,tr=0;accs.forEach(a=>{const s=cardSaldos(a.name);if(a.currency==='ARS'){tp+=s.aPagar;tr+=s.restante;}});
+      let tp=0,tr=0;accs.forEach(a=>{if(a.includeInTotal===false)return;const s=cardSaldos(a.name);tp+=toARS(s.aPagar,a.currency)||0;tr+=toARS(s.restante,a.currency)||0;});
       html+='<div class="grp"><div class="gh cards"><span>'+g+'</span><div class="twocol"><div class="c"><small>Vencido · a pagar</small><span class="'+dz(tp)+'">'+money(tp)+'</span></div><div class="c"><small>Próximo vencimiento</small><span class="'+dz(tr)+'">'+money(tr)+'</span></div></div></div>';
       accs.forEach(a=>{const s=cardSaldos(a.name);html+='<div class="arow" data-acc="'+a.name+'"><span class="an">'+a.name+'</span><div class="twocol"><span class="av '+dz(s.aPagar)+' v">'+money(s.aPagar,a.currency)+'</span><span class="av '+dz(s.restante)+' v">'+money(s.restante,a.currency)+'</span></div></div>';});
       html+='</div>';
@@ -581,14 +585,14 @@ function renderProjMonths(){
   const start=new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1);let running=now,html='';const series=[];
   for(let i=0;i<6;i++){const dd=new Date(start.getFullYear(),start.getMonth()+i,1),m=ym(dd);
     // vencimientos de tarjeta = cuotas/consumos cuyo MES DE PAGO cae en este mes (las vas corrigiendo vos)
-    const futCard=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&isARS(t)&&payMonthOf(t)===m);
+    const futCard=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&payMonthOf(t)===m);
     // resto a futuro (sueldos, préstamos, gastos no-tarjeta)
-    const futOther=DB.tx.filter(t=>!isCard(t.account)&&t.type!=='transfer'&&isARS(t)&&ymOf(t.date)===m&&new Date(t.date+'T12:00:00')>TODAY);
+    const futOther=DB.tx.filter(t=>!isCard(t.account)&&t.type!=='transfer'&&ymOf(t.date)===m&&new Date(t.date+'T12:00:00')>TODAY);
     const rems=DB.reminders.filter(r=>remActiveIn(r,m));
     const items=[
-      ...futCard.map(t=>{const nt=((t.note||'').trim()||'—');const lab=nt+(t.inst&&!/\(\d+\/\d+\)/.test(nt)?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'');return {type:'expense',amt:t.amount,path:['💳 Vencimiento tarjeta', t.account, t.category||'Otros', t.sub||'—', lab]};}),
-      ...futOther.map(t=>({type:t.type,amt:t.amount,path:[t.category||'Otros', t.sub||'—', ((t.note||'').trim()||'—')]})),
-      ...rems.map(r=>({type:r.type,amt:remAmount(r,m),path:[r.category||'Recordatorios', r.sub||'—', (r.name||'recordatorio')+' (recordatorio)']}))
+      ...futCard.map(t=>{const nt=((t.note||'').trim()||'—');const usd=(t.currency||'ARS')==='USD';const lab=nt+(t.inst&&!/\(\d+\/\d+\)/.test(nt)?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'')+(usd?' (USD)':'');return {type:'expense',amt:toARS(t.amount,t.currency||'ARS')||0,path:['💳 Vencimiento tarjeta', t.account, t.category||'Otros', t.sub||'—', lab]};}),
+      ...futOther.map(t=>{const usd=(t.currency||'ARS')==='USD';return {type:t.type,amt:toARS(t.amount,t.currency||'ARS')||0,path:[t.category||'Otros', t.sub||'—', ((t.note||'').trim()||'—')+(usd?' (USD)':'')]};}),
+      ...rems.map(r=>{const rc=curOf(r.account)||'ARS';const usd=rc==='USD';return {type:r.type,amt:toARS(remAmount(r,m),rc)||0,path:[r.category||'Recordatorios', r.sub||'—', (r.name||'recordatorio')+' (recordatorio)'+(usd?' (USD)':'')]};})
     ];
     let inc=0,exp=0;items.forEach(it=>{if(it.type==='income')inc+=it.amt;else exp+=it.amt;});running+=inc-exp;
     series.push({short:dd.toLocaleDateString('es-AR',{month:'short'}).replace('.',''),running:running,inc:inc,exp:exp});
