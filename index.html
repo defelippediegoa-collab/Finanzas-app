@@ -170,7 +170,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v13</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v14</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -586,7 +586,7 @@ function renderProjMonths(){
     const futOther=DB.tx.filter(t=>!isCard(t.account)&&t.type!=='transfer'&&isARS(t)&&ymOf(t.date)===m&&new Date(t.date+'T12:00:00')>TODAY);
     const rems=DB.reminders.filter(r=>remActiveIn(r,m));
     const items=[
-      ...futCard.map(t=>{const nt=((t.note||'').trim()||'—');const lab=nt+(t.inst&&!/\(\d+\/\d+\)/.test(nt)?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'');return {type:'expense',amt:t.amount,path:['💳 '+t.account, t.category||'Otros', t.sub||'—', lab]};}),
+      ...futCard.map(t=>{const nt=((t.note||'').trim()||'—');const lab=nt+(t.inst&&!/\(\d+\/\d+\)/.test(nt)?(' ('+t.inst[0]+'/'+t.inst[1]+')'):'');return {type:'expense',amt:t.amount,path:['💳 Vencimiento tarjeta', t.account, t.category||'Otros', t.sub||'—', lab]};}),
       ...futOther.map(t=>({type:t.type,amt:t.amount,path:[t.category||'Otros', t.sub||'—', ((t.note||'').trim()||'—')]})),
       ...rems.map(r=>({type:r.type,amt:remAmount(r,m),path:[r.category||'Recordatorios', r.sub||'—', (r.name||'recordatorio')+' (recordatorio)']}))
     ];
