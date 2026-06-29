@@ -28,6 +28,12 @@
   .topbtn{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:6px}
   .strip,.acctsum{display:flex;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .hidsum{display:flex;justify-content:space-between;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);background:#191c23}
+  .searchbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:#191c23}
+  .searchbar .si{font-size:13px;opacity:.6}
+  .searchbar input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--txt);font-size:13px;outline:none}
+  .searchbar input:focus{border-color:var(--accent)}
+  .searchbar button{background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:4px 8px}
+  .searchinfo{padding:8px 16px;font-size:12px;color:var(--muted)}
   .hidsum span:last-child{font-weight:700}
   .strip .cell,.acctsum .cell{flex:1;text-align:center;padding:11px 4px}
   .strip .lbl,.acctsum .lbl{font-size:12px;color:var(--muted);margin-bottom:3px}
@@ -177,11 +183,12 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v16</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v17</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
   <div class="view" id="view-trans">
+    <div class="searchbar"><span class="si">🔎</span><input id="txSearch" placeholder="Buscar nota, categoría, cuenta, monto…" autocomplete="off"><button id="txSearchClear" class="hidden">✕</button></div>
     <div class="strip">
       <div class="cell"><div class="lbl">Ingresos</div><div class="val pos" id="s-inc">0.00</div></div>
       <div class="cell"><div class="lbl">Gastos</div><div class="val neg" id="s-exp">0.00</div></div>
@@ -388,7 +395,7 @@ const PALETTE=['--c1','--c2','--c3','--c4','--c5','--c6','--c7'];
 
 /* ---------- state ---------- */
 let DB=normalize(Store.load()||defaultDB());
-let view='trans',cur=(()=>{const d=new Date();d.setDate(1);d.setHours(12,0,0,0);return d;})(),statKind='income',editId=null,remEditId=null,accEditName=null,mgrKind='expense',mgrSubCat=null,detail=null,acCur='ARS';
+let view='trans',cur=(()=>{const d=new Date();d.setDate(1);d.setHours(12,0,0,0);return d;})(),statKind='income',editId=null,remEditId=null,accEditName=null,mgrKind='expense',mgrSubCat=null,detail=null,acCur='ARS',txQuery='';
 const TODAY=(()=>{const d=new Date();d.setHours(23,59,59,999);return d;})();
 let detailRefresh=null;
 
@@ -415,14 +422,16 @@ function fill(sel,opts,sel0){sel.innerHTML=opts.map(o=>'<option'+(o===sel0?' sel
 function isARS(t){return (t.currency||'ARS')==='ARS';}
 
 /* ---------- TRANSACCIONES ---------- */
+function txMatch(t,q){const hay=[t.note,t.category,t.sub,t.account,t.from,t.to,String(t.amount)].filter(Boolean).join(' ').toLowerCase();return q.split(/\s+/).every(w=>hay.includes(w));}
 function renderDiario(){
-  const m=ym(cur);
-  const list=DB.tx.filter(t=>ymOf(t.date)===m).sort((a,b)=>b.date.localeCompare(a.date));
+  const q=(txQuery||'').trim().toLowerCase();
+  const list=q?DB.tx.filter(t=>txMatch(t,q)).sort((a,b)=>b.date.localeCompare(a.date))
+              :DB.tx.filter(t=>ymOf(t.date)===ym(cur)).sort((a,b)=>b.date.localeCompare(a.date));
   let inc=0,exp=0;list.forEach(t=>{if(!isARS(t))return;if(t.type==='income')inc+=t.amount;else if(t.type==='expense')exp+=t.amount;});
   $('#s-inc').textContent=money(inc);$('#s-exp').textContent=money(exp);
   $('#s-bal').textContent=money(inc-exp);$('#s-bal').className='val '+sgn(inc-exp);
-  if(!list.length){$('#diario').innerHTML='<div class="empty">No hay movimientos en <b>'+monthName(cur)+'</b>.<br>Tocá <b>+</b> para agregar uno.</div>';return;}
-  $('#diario').innerHTML=dayGroups(list);bindTx('#diario');
+  if(!list.length){$('#diario').innerHTML=q?'<div class="empty">Sin resultados para <b>'+esc(txQuery)+'</b>.</div>':'<div class="empty">No hay movimientos en <b>'+monthName(cur)+'</b>.<br>Tocá <b>+</b> para agregar uno.</div>';return;}
+  $('#diario').innerHTML=(q?'<div class="searchinfo">'+list.length+(list.length===1?' resultado':' resultados')+' en todos los meses</div>':'')+dayGroups(list);bindTx('#diario');
 }
 function dayGroups(list){
   const days={};list.forEach(t=>(days[t.date]=days[t.date]||[]).push(t));
@@ -692,7 +701,7 @@ function openCategoryDetail(cat){
 
 /* ---------- dispatch ---------- */
 function render(){$('#curM').textContent=monthName(cur);if(view==='trans')renderDiario();else if(view==='stats')renderStats();else if(view==='acc')renderAccounts();else if(view==='proj')renderReminders();}
-function setView(v){view=v;detail=null;$('#hdrBack').classList.add('hidden');$('#hdrMonth').classList.remove('hidden');$('#view-detail').classList.add('hidden');
+function setView(v){view=v;detail=null;txQuery='';{const ts=$('#txSearch');if(ts){ts.value='';$('#txSearchClear').classList.add('hidden');}}$('#hdrBack').classList.add('hidden');$('#hdrMonth').classList.remove('hidden');$('#view-detail').classList.add('hidden');
   document.querySelectorAll('.nav .n').forEach(n=>n.classList.toggle('on',n.dataset.v===v));
   ['trans','stats','acc','proj'].forEach(id=>$('#view-'+id).classList.toggle('hidden',id!==v));render();}
 document.querySelectorAll('.nav .n').forEach(n=>n.onclick=()=>setView(n.dataset.v));
@@ -700,6 +709,8 @@ $('#prevM').onclick=()=>{cur=new Date(cur.getFullYear(),cur.getMonth()-1,1);rend
 $('#nextM').onclick=()=>{cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);render();};
 $('#tab-inc').onclick=()=>{statKind='income';$('#tab-inc').classList.add('on');$('#tab-exp').classList.remove('on');renderStats();};
 $('#tab-exp').onclick=()=>{statKind='expense';$('#tab-exp').classList.add('on');$('#tab-inc').classList.remove('on');renderStats();};
+$('#txSearch').oninput=e=>{txQuery=e.target.value;$('#txSearchClear').classList.toggle('hidden',!txQuery);renderDiario();};
+$('#txSearchClear').onclick=()=>{txQuery='';$('#txSearch').value='';$('#txSearchClear').classList.add('hidden');renderDiario();$('#txSearch').focus();};
 
 /* ---------- menu / io ---------- */
 $('#menuBtn').onclick=()=>$('#menu').classList.toggle('on');
