@@ -170,7 +170,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v11</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v13</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -500,6 +500,17 @@ function effects(name,filter){let s=0;DB.tx.forEach(t=>{if(t.hist)return;if(filt
 function toARS(b,c){return c==='ARS'?b:(c==='USD'?b*(DB.usdRate||1000):null);}
 function convertAmt(amount,fromCur,toCur,rate){if(fromCur===toCur)return amount;if(fromCur==='ARS'&&toCur==='USD')return Math.round(amount/rate*100)/100;if(fromCur==='USD'&&toCur==='ARS')return Math.round(amount*rate*100)/100;return amount;}
 function liveBalance(name){const a=acct(name);const init=a?(a.initial||0):0;return init+effects(name,t=>new Date(t.date+'T12:00:00')<=TODAY);}
+// Cuando se edita un movimiento importado (histórico), lo "soltamos" de la foto inicial:
+// devolvemos su efecto al saldo inicial de las cuentas comunes y lo marcamos como vivo,
+// para que de ahí en más cuente en el saldo. El saldo solo se mueve por lo que cambie el usuario.
+function releaseHist(t){
+  if(!t||!t.hist)return;
+  const adj=(n,d)=>{if(!n||isCard(n))return;const a=acct(n);if(a)a.initial=(a.initial||0)+d;};
+  if(t.type==='expense')adj(t.account,t.amount);
+  else if(t.type==='income')adj(t.account,-t.amount);
+  else if(t.type==='transfer'){adj(t.from,t.amount);adj(t.to,-(t.amountTo!=null?t.amountTo:t.amount));}
+  t.hist=false;
+}
 function totalOwed(name){const a=acct(name);
   if(a&&a.type==='Tarjetas de crédito'){const s=cardSaldos(name);return -(s.aPagar+s.restante);}
   const init=a?(a.initial||0):0;return init+effects(name);} // all dates incl future
@@ -717,10 +728,10 @@ document.querySelectorAll('#typeSeg button').forEach(b=>b.onclick=()=>{fType=b.d
 document.querySelectorAll('#paySeg button').forEach(b=>b.onclick=()=>{fPay=b.dataset.p;document.querySelectorAll('#paySeg button').forEach(x=>x.classList.toggle('on',x===b));refreshPayUI();setAmtLabel();});
 $('#saveTx').onclick=()=>{
   const amt=parseFloat($('#f-amount').value);if(!amt||amt<=0){toast('Poné un importe');return;}const date=$('#f-date').value;
-  if(editId){const t=DB.tx.find(x=>x.id===editId);t.amount=amt;t.date=date;
+  if(editId){const t=DB.tx.find(x=>x.id===editId);const wasHist=t.hist;releaseHist(t);t.amount=amt;t.date=date;
     if(fType==='transfer'){t.type='transfer';t.from=$('#f-account').value;t.to=$('#f-to').value;t.currency=curOf(t.from);t.note=$('#f-note').value||'';delete t.account;delete t.category;delete t.sub;}
     else{t.type=fType;t.account=$('#f-account').value;t.category=$('#f-category').value;t.sub=$('#f-sub').value==='—'?'':$('#f-sub').value;t.currency=curOf(t.account);t.note=$('#f-note').value||'';if(fType==='expense'&&isCard(t.account)&&fPay==='once'){t.dueMonth=$('#f-paymonth').value;}else delete t.dueMonth;}
-    persist();$('#scrim').classList.remove('on');cur=new Date(+date.slice(0,4),+date.slice(5,7)-1,1);render();if(detail&&detailRefresh)detailRefresh();toast('Actualizado');return;}
+    persist();$('#scrim').classList.remove('on');cur=new Date(+date.slice(0,4),+date.slice(5,7)-1,1);render();if(detail&&detailRefresh)detailRefresh();toast(wasHist?'Actualizado · ahora afecta el saldo':'Actualizado');return;}
   if(fType==='transfer'){const from=$('#f-account').value,to=$('#f-to').value;const fc=curOf(from),tc=curOf(to);
     const rec={id:'u'+Date.now(),date,type:'transfer',from,to,amount:amt,currency:fc,note:$('#f-note').value||''};
     if(fc!==tc){const rate=parseFloat($('#f-rate').value)||DB.usdRate;rec.rate=rate;rec.currencyTo=tc;rec.amountTo=convertAmt(amt,fc,tc,rate);}
@@ -869,6 +880,11 @@ async function cloudPull(silent){const url=$('#sync-url').value?.trim()||DB.sync
   try{const r=await fetch(url);const j=await r.json();
     if(j&&Array.isArray(j.tx)){
       const cloudTime=j.updatedAt||0;
+      // PROTECCIÓN anti-borrado: una nube vacía NUNCA pisa datos buenos del teléfono.
+      if(j.tx.length===0&&DB.tx.length>0){
+        if(silent){if(DB.syncUrl&&DB.syncAuto)cloudPush(true);}
+        else toast('La nube está vacía: no piso tus datos. Tocá Subir ▲ para arreglarla.');
+        return;}
       if(silent&&cloudTime<localTime){ // SOLO en automático: no pisar lo nuevo con lo viejo
         if(DB.syncUrl&&DB.syncAuto)cloudPush(true);
         return;}
