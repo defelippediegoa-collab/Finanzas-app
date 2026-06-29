@@ -170,7 +170,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v10</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v11</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -256,10 +256,7 @@
   <div class="fld"><label>Nombre</label><input id="ac-name" placeholder="Ej: Santander visa"></div>
   <div class="fld" id="ac-initial-wrap"><label>Dinero inicial</label><input type="number" class="big" id="ac-initial" placeholder="0"></div>
   <div class="fld"><label>Moneda</label><div class="curpick" id="ac-cur"></div></div>
-  <div class="extra hidden" id="ac-cardextra"><div class="row2" style="padding:6px 18px">
-    <div><label style="font-size:12px;color:var(--muted)">Saldo a pagar (este mes)</label><input type="number" id="ac-apagar" placeholder="0"></div>
-    <div><label style="font-size:12px;color:var(--muted)">Saldo restante</label><input type="number" id="ac-restante" placeholder="0"></div>
-  </div><div class="hint" style="padding:0 18px">Estos son los saldos actuales de la tarjeta. Los movimientos nuevos se suman solos.</div></div>
+  <div class="extra hidden" id="ac-cardextra"><div class="hint" style="padding:8px 18px">La deuda de la tarjeta se calcula sola: los consumos van a "vencido / a pagar" o "próximo vencimiento" según su mes de pago, y se netean con las transferencias que hacés para pagarla. No hace falta cargar saldos a mano.</div></div>
   <div class="fld"><label>Descripción (opcional)</label><input id="ac-desc" placeholder=""></div>
   <div class="swrow"><div><div class="tl">Incluir en mi total</div><div class="ts">Apagalo para cuentas de ahorro que no querés sumar a tu capital.</div></div><div class="sw on" id="ac-include"></div></div>
   <button class="save" id="saveAcc">Guardar</button>
@@ -503,20 +500,27 @@ function effects(name,filter){let s=0;DB.tx.forEach(t=>{if(t.hist)return;if(filt
 function toARS(b,c){return c==='ARS'?b:(c==='USD'?b*(DB.usdRate||1000):null);}
 function convertAmt(amount,fromCur,toCur,rate){if(fromCur===toCur)return amount;if(fromCur==='ARS'&&toCur==='USD')return Math.round(amount/rate*100)/100;if(fromCur==='USD'&&toCur==='ARS')return Math.round(amount*rate*100)/100;return amount;}
 function liveBalance(name){const a=acct(name);const init=a?(a.initial||0):0;return init+effects(name,t=>new Date(t.date+'T12:00:00')<=TODAY);}
-function totalOwed(name){const a=acct(name);const init=a?(a.initial||0):0;return init+effects(name);} // all dates incl future
+function totalOwed(name){const a=acct(name);
+  if(a&&a.type==='Tarjetas de crédito'){const s=cardSaldos(name);return -(s.aPagar+s.restante);}
+  const init=a?(a.initial||0):0;return init+effects(name);} // all dates incl future
 const MESACTUAL=ym(TODAY);
 const MESPROX=ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));
 function payMonthOf(t){return t.dueMonth||ymOf(t.date);}
-// Saldo a pagar = se liquida este mes; Saldo restante = el mes que viene.
-// Parte de los saldos guardados (foto actual) y suma/resta solo movimientos nuevos.
+// TARJETAS — "a pagar este mes" = todo lo NO pagado con mes de pago <= mes actual (incluye vencidos de meses anteriores).
+// "próximo vencimiento" = lo que vence el mes que viene. Rota solo el 1º de cada mes (MESACTUAL/MESPROX salen de hoy).
+// Los pagos (transferencias a la tarjeta) netean arrancando por lo más viejo. Las cuotas más a futuro no figuran acá (van en la proyección).
 function cardSaldos(name){
-  const a=acct(name);
-  let aPagar=a&&a.saldoAPagar!=null?a.saldoAPagar:0, restante=a&&a.saldoRestante!=null?a.saldoRestante:0;
-  DB.tx.forEach(t=>{ if(t.hist)return;
-    if(t.type==='expense'&&t.account===name){const pm=payMonthOf(t);if(pm===MESACTUAL)aPagar+=t.amount;else if(pm===MESPROX)restante+=t.amount;}
-    else if(t.type==='transfer'&&t.to===name){const m=ymOf(t.date);if(m===MESACTUAL)aPagar-=t.amount;else if(m===MESPROX)restante-=t.amount;}
+  let le=0,nx=0,pay=0;
+  DB.tx.forEach(t=>{
+    if(t.type==='expense'&&t.account===name){const pm=payMonthOf(t);if(pm<=MESACTUAL)le+=t.amount;else if(pm===MESPROX)nx+=t.amount;}
+    else if(t.type==='income'&&t.account===name)pay+=t.amount;
+    else if(t.type==='transfer'&&t.to===name)pay+=(t.amountTo!=null?t.amountTo:t.amount);
+    else if(t.type==='transfer'&&t.from===name){const pm=ymOf(t.date);if(pm<=MESACTUAL)le+=t.amount;else if(pm===MESPROX)nx+=t.amount;}
   });
-  return {aPagar:Math.max(0,aPagar),restante:Math.max(0,restante)};
+  const aPagar=Math.max(0,le-pay);
+  const leftover=Math.max(0,pay-le);
+  const restante=Math.max(0,nx-leftover);
+  return {aPagar:aPagar,restante:restante};
 }
 
 /* ---------- CUENTAS ---------- */
@@ -530,7 +534,7 @@ function renderAccounts(){
   GROUP_ORDER.forEach(g=>{const accs=groups[g];if(!accs)return;
     if(g==='Tarjetas de crédito'){
       let tp=0,tr=0;accs.forEach(a=>{const s=cardSaldos(a.name);if(a.currency==='ARS'){tp+=s.aPagar;tr+=s.restante;}});
-      html+='<div class="grp"><div class="gh cards"><span>'+g+'</span><div class="twocol"><div class="c"><small>A pagar · este mes</small><span class="'+dz(tp)+'">'+money(tp)+'</span></div><div class="c"><small>Restante · mes que viene</small><span class="'+dz(tr)+'">'+money(tr)+'</span></div></div></div>';
+      html+='<div class="grp"><div class="gh cards"><span>'+g+'</span><div class="twocol"><div class="c"><small>Vencido · a pagar</small><span class="'+dz(tp)+'">'+money(tp)+'</span></div><div class="c"><small>Próximo vencimiento</small><span class="'+dz(tr)+'">'+money(tr)+'</span></div></div></div>';
       accs.forEach(a=>{const s=cardSaldos(a.name);html+='<div class="arow" data-acc="'+a.name+'"><span class="an">'+a.name+'</span><div class="twocol"><span class="av '+dz(s.aPagar)+' v">'+money(s.aPagar,a.currency)+'</span><span class="av '+dz(s.restante)+' v">'+money(s.restante,a.currency)+'</span></div></div>';});
       html+='</div>';
     }else{
@@ -623,8 +627,8 @@ function openAccountDetail(name){
   if(isCard){const s=cardSaldos(name);const tot=-totalOwed(name);
     h+='<div class="dhero"><div class="dl">'+name+' · deuda total</div><div class="dv neg">'+money(tot,c)+'</div>'+
       '<div style="display:flex;gap:18px;margin-top:10px">'+
-      '<div><div class="dl">A pagar (este mes)</div><div style="font-weight:700;color:var(--expense)">'+money(s.aPagar,c)+'</div></div>'+
-      '<div><div class="dl">Restante (mes que viene)</div><div style="font-weight:700;color:var(--expense)">'+money(s.restante,c)+'</div></div></div></div>';
+      '<div><div class="dl">Vencido · a pagar</div><div style="font-weight:700;color:var(--expense)">'+money(s.aPagar,c)+'</div></div>'+
+      '<div><div class="dl">Próximo vencimiento</div><div style="font-weight:700;color:var(--expense)">'+money(s.restante,c)+'</div></div></div></div>';
     h+='<div class="editbtn" id="payCardBtn" style="background:var(--accent);color:#fff;border:none">Pagar tarjeta (liquidación)</div>';
   } else {const b=liveBalance(name);h+='<div class="dhero"><div class="dl">'+name+(a?(' · '+a.type):'')+'</div><div class="dv '+sgn(b)+'">'+money(b,c)+'</div></div>';}
   h+='<div class="editbtn" id="editAccBtn">Editar cuenta</div>';
@@ -757,7 +761,6 @@ function openAcc(name){
   accEditName=name||null;$('#accTitle').textContent=name?'Editar cuenta':'Nueva cuenta';$('#delAcc').classList.toggle('hidden',!name);
   const a=name?acct(name):null;$('#ac-type').value=a?a.type:'Cuentas';$('#ac-name').value=a?a.name:'';$('#ac-initial').value=a?(a.initial||0):'';$('#ac-desc').value=a?(a.desc||''):'';
   acCur=a?a.currency:'ARS';renderCurPick();
-  $('#ac-apagar').value=a&&a.saldoAPagar!=null?a.saldoAPagar:'';$('#ac-restante').value=a&&a.saldoRestante!=null?a.saldoRestante:'';
   $('#ac-include').classList.toggle('on',!a||a.includeInTotal!==false);
   toggleCardExtra();$('#accScrim').classList.add('on');
 }
@@ -769,7 +772,7 @@ $('#closeAcc').onclick=()=>$('#accScrim').classList.remove('on');$('#accScrim').
 $('#saveAcc').onclick=()=>{
   const name=$('#ac-name').value.trim();if(!name){toast('Poné un nombre');return;}
   const obj={name,type:$('#ac-type').value,currency:acCur,initial:parseFloat($('#ac-initial').value)||0,desc:$('#ac-desc').value.trim(),includeInTotal:$('#ac-include').classList.contains('on')};
-  if(obj.type==='Tarjetas de crédito'){obj.saldoAPagar=parseFloat($('#ac-apagar').value)||0;obj.saldoRestante=parseFloat($('#ac-restante').value)||0;obj.initial=-(obj.saldoAPagar+obj.saldoRestante);}
+  if(obj.type==='Tarjetas de crédito'){obj.initial=0;}
   if(accEditName){const a=acct(accEditName);if(accEditName!==name){DB.tx.forEach(t=>{if(t.account===accEditName)t.account=name;if(t.from===accEditName)t.from=name;if(t.to===accEditName)t.to=name;});DB.reminders.forEach(r=>{if(r.account===accEditName)r.account=name;});}Object.assign(a,obj);}
   else{if(acct(name)){toast('Ya existe esa cuenta');return;}DB.accounts.push(obj);}
   persist();$('#accScrim').classList.remove('on');if(detail)closeDetail();setView('acc');toast('Cuenta guardada');
