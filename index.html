@@ -192,7 +192,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v20</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v21</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -344,7 +344,7 @@
 </div></div>
 
 <div class="scrim" id="debtScrim"><div class="sheet">
-  <h3><span>A deber · detalle</span><button class="x" id="closeDebt">×</button></h3>
+  <h3><span>A deber · mes en curso</span><button class="x" id="closeDebt">×</button></h3>
   <div id="debtBody"></div>
 </div></div>
 
@@ -573,7 +573,7 @@ function renderAccounts(){
   // groups
   const groups={};DB.accounts.forEach(a=>{const g=TYPE_GROUP[a.type]||'Otras';(groups[g]=groups[g]||[]).push(a);});
   let capA=0,debtA=0,hidA=0;
-  DB.accounts.forEach(a=>{const raw=a.type==='Tarjetas de crédito'?totalOwed(a.name):liveBalance(a.name);const b=toARS(raw,a.currency);if(b==null)return;if(a.includeInTotal===false){hidA+=b;return;}if(b>=0)capA+=b;else debtA+=b;});
+  DB.accounts.forEach(a=>{const raw=a.type==='Tarjetas de crédito'?-cardSaldos(a.name).aPagar:liveBalance(a.name);const b=toARS(raw,a.currency);if(b==null)return;if(a.includeInTotal===false){hidA+=b;return;}if(b>=0)capA+=b;else debtA+=b;});
   debtA-=remDebtARS(MESACTUAL);
   $('#a-cap').textContent=money(capA);$('#a-debt').textContent=money(Math.abs(debtA));$('#a-bal').textContent=money(capA+debtA);$('#a-bal').className='val '+sgn(capA+debtA);
   const hw=$('#a-hidden-wrap');if(hidA!==0){hw.classList.remove('hidden');$('#a-hidden').textContent=money(hidA);$('#a-hidden').className=sgn(hidA);}else hw.classList.add('hidden');
@@ -732,9 +732,11 @@ $('#txSearchClear').onclick=()=>{txQuery='';$('#txSearch').value='';$('#txSearch
 function showDebtBreakdown(){
   const rows=[];let tot=0;
   DB.accounts.forEach(a=>{if(a.includeInTotal===false)return;
-    const isC=a.type==='Tarjetas de crédito';const raw=isC?totalOwed(a.name):liveBalance(a.name);const ars=toARS(raw,a.currency);
+    const isC=a.type==='Tarjetas de crédito';let raw,sub='';
+    if(isC){const s=cardSaldos(a.name);raw=-s.aPagar;sub='Liquidación este mes'+(s.restante>0?' · Próximo (no suma) '+money(s.restante,a.currency):'');}
+    else raw=liveBalance(a.name);
+    const ars=toARS(raw,a.currency);
     if(ars==null||ars>=0)return;tot+=ars;
-    let sub='';if(isC){const s=cardSaldos(a.name);sub='Vencido '+money(s.aPagar,a.currency)+' · Próximo '+money(s.restante,a.currency);}
     rows.push({name:a.name,cur:a.currency,ars:ars,native:raw,sub:sub});});
   rows.sort((x,y)=>x.ars-y.ars);
   const rem=unpaidRems(MESACTUAL).map(r=>({name:(r.name||'recordatorio'),cur:curOf(r.account),ars:toARS(remAmount(r,MESACTUAL),curOf(r.account))||0})).filter(r=>r.ars>0).sort((x,y)=>y.ars-x.ars);
