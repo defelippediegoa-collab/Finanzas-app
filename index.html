@@ -34,6 +34,13 @@
   .searchbar input:focus{border-color:var(--accent)}
   .searchbar button{background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:4px 8px}
   .searchinfo{padding:8px 16px;font-size:12px;color:var(--muted)}
+  .tapcell{cursor:pointer}.tapcell .lbl{color:var(--accent)}
+  .debtlist{padding:2px 0}
+  .debtrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--line)}
+  .debtrow .dn{font-weight:600;font-size:14px}
+  .debtrow .ds{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .debtrow .damt{font-weight:700;white-space:nowrap;font-size:14px}
+  .debttot{display:flex;justify-content:space-between;padding:14px 18px 24px;font-weight:700;font-size:15px}
   .hidsum span:last-child{font-weight:700}
   .strip .cell,.acctsum .cell{flex:1;text-align:center;padding:11px 4px}
   .strip .lbl,.acctsum .lbl{font-size:12px;color:var(--muted);margin-bottom:3px}
@@ -184,7 +191,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v18</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v19</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -211,7 +218,7 @@
   <div class="view hidden" id="view-acc">
     <div class="acctsum">
       <div class="cell"><div class="lbl">Capital</div><div class="val pos" id="a-cap">0.00</div></div>
-      <div class="cell"><div class="lbl">A deber</div><div class="val neg" id="a-debt">0.00</div></div>
+      <div class="cell tapcell" id="a-debt-cell"><div class="lbl">A deber ›</div><div class="val neg" id="a-debt">0.00</div></div>
       <div class="cell"><div class="lbl">Balance</div><div class="val" id="a-bal">0.00</div></div>
     </div>
     <div class="hidsum hidden" id="a-hidden-wrap"><span>Cuentas ocultas (aparte)</span><span id="a-hidden">0.00</span></div>
@@ -333,6 +340,11 @@
   <div class="fld"><label>Cargar manualmente</label><input type="number" class="big" id="rateInput" inputmode="decimal" placeholder="0"></div>
   <button class="save" id="rateSave">Guardar tipo de cambio</button>
   <button class="editbtn" id="rateFetch" style="margin:0 18px 22px;width:calc(100% - 36px)">Actualizar con Banco Nación (online)</button>
+</div></div>
+
+<div class="scrim" id="debtScrim"><div class="sheet">
+  <h3><span>A deber · detalle</span><button class="x" id="closeDebt">×</button></h3>
+  <div id="debtBody"></div>
 </div></div>
 
 <div class="toast" id="toast"></div>
@@ -712,6 +724,23 @@ $('#tab-inc').onclick=()=>{statKind='income';$('#tab-inc').classList.add('on');$
 $('#tab-exp').onclick=()=>{statKind='expense';$('#tab-exp').classList.add('on');$('#tab-inc').classList.remove('on');renderStats();};
 $('#txSearch').oninput=e=>{txQuery=e.target.value;$('#txSearchClear').classList.toggle('hidden',!txQuery);renderDiario();};
 $('#txSearchClear').onclick=()=>{txQuery='';$('#txSearch').value='';$('#txSearchClear').classList.add('hidden');renderDiario();$('#txSearch').focus();};
+function showDebtBreakdown(){
+  const rows=[];let tot=0;
+  DB.accounts.forEach(a=>{if(a.includeInTotal===false)return;
+    const isC=a.type==='Tarjetas de crédito';const raw=isC?totalOwed(a.name):liveBalance(a.name);const ars=toARS(raw,a.currency);
+    if(ars==null||ars>=0)return;tot+=ars;
+    let sub='';if(isC){const s=cardSaldos(a.name);sub='Vencido '+money(s.aPagar,a.currency)+' · Próximo '+money(s.restante,a.currency);}
+    rows.push({name:a.name,cur:a.currency,ars:ars,native:raw,sub:sub});});
+  rows.sort((x,y)=>x.ars-y.ars);
+  let h;
+  if(!rows.length)h='<div class="empty" style="padding:24px">No tenés deudas registradas.</div>';
+  else{h='<div class="debtlist">';rows.forEach(r=>{h+='<div class="debtrow"><div class="dinfo"><div class="dn">'+esc(r.name)+'</div>'+(r.sub?'<div class="ds">'+r.sub+'</div>':'')+(r.cur!=='ARS'?'<div class="ds">'+money(Math.abs(r.native),r.cur)+' → pesos</div>':'')+'</div><div class="damt neg">'+money(Math.abs(r.ars))+'</div></div>';});
+    h+='</div><div class="debttot"><span>Total a deber</span><span class="neg">'+money(Math.abs(tot))+'</span></div>';}
+  $('#debtBody').innerHTML=h;$('#debtScrim').classList.add('on');
+}
+$('#a-debt-cell').onclick=showDebtBreakdown;
+$('#closeDebt').onclick=()=>$('#debtScrim').classList.remove('on');
+$('#debtScrim').onclick=e=>{if(e.target===$('#debtScrim'))$('#debtScrim').classList.remove('on');};
 
 /* ---------- menu / io ---------- */
 $('#menuBtn').onclick=()=>$('#menu').classList.toggle('on');
