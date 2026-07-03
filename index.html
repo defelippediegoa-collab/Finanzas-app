@@ -95,6 +95,10 @@
   .pj-hero .lbl{font-size:13px;color:var(--muted)}.pj-hero .big{font-size:26px;font-weight:700;margin-top:4px;letter-spacing:-.5px}
   .pj-hero .sub{font-size:12px;color:var(--muted2);margin-top:6px}
   .pj-sec{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 8px;display:flex;justify-content:space-between;align-items:center}
+  .pjtoggle{cursor:pointer;user-select:none}
+  .pjtoggle .rtoglbl{display:flex;align-items:center;gap:6px}
+  .pjtoggle .caret{font-size:9px;color:var(--muted2)}
+  .pjtoggle .cnt{color:var(--muted2)}
   .pj-sec button{background:#23272f;border:1px solid var(--line);color:var(--accent);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer}
   .mcard{margin:0 16px 12px;background:var(--bg2);border:1px solid var(--line);border-radius:14px;overflow:hidden}
   .mcard .mh{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line)}
@@ -192,7 +196,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v21</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v22</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -228,8 +232,8 @@
 
   <div class="view hidden" id="view-proj">
     <div class="pj-hero"><div class="lbl">Dinero disponible hoy</div><div class="big" id="pj-now">0.00</div><div class="sub">Efectivo y cuentas en pesos, sin tarjetas ni ahorros</div></div>
-    <div class="pj-sec"><span>Recordatorios</span><button id="addRem">+ Recordatorio</button></div>
-    <div id="reminders"></div>
+    <div class="pj-sec pjtoggle" id="remToggle"><span class="rtoglbl"><span class="caret" id="remCaret">▸</span> Recordatorios <span class="cnt" id="remCount"></span></span><button id="addRem">+ Recordatorio</button></div>
+    <div id="reminders" class="hidden"></div>
     <div class="pj-sec"><span>Proyección próximos meses</span></div>
     <div id="pj-chart"></div>
     <div id="pj-months"></div>
@@ -601,6 +605,7 @@ function liquidNow(){let s=0;DB.accounts.forEach(a=>{if(a.currency==='ARS'&&(a.t
 function remActiveIn(r,m){if(r.from&&m<r.from)return false;if(r.freq==='once')return m===r.from;if(r.until&&m>r.until)return false;return true;}
 function remAmount(r,m){let amt=r.amount;if(Array.isArray(r.changes)){r.changes.filter(c=>c&&c.from&&c.amount>0).sort((a,b)=>a.from<b.from?-1:1).forEach(c=>{if(m>=c.from)amt=c.amount;});}return amt;}
 function renderReminders(){
+  $('#remCount').textContent=DB.reminders.length?('('+DB.reminders.length+')'):'';
   $('#reminders').innerHTML=DB.reminders.length?DB.reminders.map(r=>{const freq=r.freq==='monthly'?'cada mes':'una vez';const acc=r.account?(' · '+r.account):'';const ct=r.sub?(' · '+r.sub):(r.category?(' · '+r.category):'');return '<div class="remrow" data-id="'+r.id+'"><div><div class="rn">'+r.name+'</div><div class="rs">'+freq+(r.from?' desde '+r.from:'')+ct+acc+'</div></div><div class="amt '+(r.type==='income'?'pos':'neg')+'">'+(r.type==='income'?'+':'−')+money(r.amount)+'</div></div>';}).join(''):'<div class="empty" style="padding:16px 24px">Sin recordatorios. Agregá el gas, el sueldo o tus suscripciones.</div>';
   document.querySelectorAll('.remrow').forEach(el=>el.onclick=()=>openRem(el.dataset.id));
   renderProjMonths();
@@ -750,6 +755,7 @@ function showDebtBreakdown(){
 }
 $('#a-debt-cell').onclick=showDebtBreakdown;
 $('#closeDebt').onclick=()=>$('#debtScrim').classList.remove('on');
+$('#remToggle').onclick=e=>{if(e.target.closest('#addRem'))return;const r=$('#reminders');const open=r.classList.toggle('hidden')===false;$('#remCaret').textContent=open?'▾':'▸';};
 $('#debtScrim').onclick=e=>{if(e.target===$('#debtScrim'))$('#debtScrim').classList.remove('on');};
 
 /* ---------- menu / io ---------- */
