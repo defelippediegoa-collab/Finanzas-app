@@ -41,6 +41,7 @@
   .debtrow .ds{font-size:11.5px;color:var(--muted);margin-top:2px}
   .debtrow .damt{font-weight:700;white-space:nowrap;font-size:14px}
   .debttot{display:flex;justify-content:space-between;padding:14px 18px 24px;font-weight:700;font-size:15px}
+  .debtsub{padding:12px 18px 5px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
   .hidsum span:last-child{font-weight:700}
   .strip .cell,.acctsum .cell{flex:1;text-align:center;padding:11px 4px}
   .strip .lbl,.acctsum .lbl{font-size:12px;color:var(--muted);margin-bottom:3px}
@@ -191,7 +192,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v19</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v20</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -547,6 +548,9 @@ function totalOwed(name){const a=acct(name);
 const MESACTUAL=ym(TODAY);
 const MESPROX=ym(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,1));
 function payMonthOf(t){return t.dueMonth||ymOf(t.date);}
+// Recordatorios de gasto del mes que todavía no están tildados como pagos (mismo tilde que la proyección).
+function unpaidRems(month){return DB.reminders.filter(r=>r.type==='expense'&&remActiveIn(r,month)&&!DB.paid['rem:'+r.id+':'+month]);}
+function remDebtARS(month){return unpaidRems(month).reduce((s,r)=>s+(toARS(remAmount(r,month),curOf(r.account))||0),0);}
 // TARJETAS — "a pagar este mes" = todo lo NO pagado con mes de pago <= mes actual (incluye vencidos de meses anteriores).
 // "próximo vencimiento" = lo que vence el mes que viene. Rota solo el 1º de cada mes (MESACTUAL/MESPROX salen de hoy).
 // Los pagos (transferencias a la tarjeta) netean arrancando por lo más viejo. Las cuotas más a futuro no figuran acá (van en la proyección).
@@ -570,6 +574,7 @@ function renderAccounts(){
   const groups={};DB.accounts.forEach(a=>{const g=TYPE_GROUP[a.type]||'Otras';(groups[g]=groups[g]||[]).push(a);});
   let capA=0,debtA=0,hidA=0;
   DB.accounts.forEach(a=>{const raw=a.type==='Tarjetas de crédito'?totalOwed(a.name):liveBalance(a.name);const b=toARS(raw,a.currency);if(b==null)return;if(a.includeInTotal===false){hidA+=b;return;}if(b>=0)capA+=b;else debtA+=b;});
+  debtA-=remDebtARS(MESACTUAL);
   $('#a-cap').textContent=money(capA);$('#a-debt').textContent=money(Math.abs(debtA));$('#a-bal').textContent=money(capA+debtA);$('#a-bal').className='val '+sgn(capA+debtA);
   const hw=$('#a-hidden-wrap');if(hidA!==0){hw.classList.remove('hidden');$('#a-hidden').textContent=money(hidA);$('#a-hidden').className=sgn(hidA);}else hw.classList.add('hidden');
   let html='';
@@ -732,9 +737,12 @@ function showDebtBreakdown(){
     let sub='';if(isC){const s=cardSaldos(a.name);sub='Vencido '+money(s.aPagar,a.currency)+' · Próximo '+money(s.restante,a.currency);}
     rows.push({name:a.name,cur:a.currency,ars:ars,native:raw,sub:sub});});
   rows.sort((x,y)=>x.ars-y.ars);
+  const rem=unpaidRems(MESACTUAL).map(r=>({name:(r.name||'recordatorio'),cur:curOf(r.account),ars:toARS(remAmount(r,MESACTUAL),curOf(r.account))||0})).filter(r=>r.ars>0).sort((x,y)=>y.ars-x.ars);
+  rem.forEach(r=>tot-=r.ars);
   let h;
-  if(!rows.length)h='<div class="empty" style="padding:24px">No tenés deudas registradas.</div>';
+  if(!rows.length&&!rem.length)h='<div class="empty" style="padding:24px">No tenés deudas registradas.</div>';
   else{h='<div class="debtlist">';rows.forEach(r=>{h+='<div class="debtrow"><div class="dinfo"><div class="dn">'+esc(r.name)+'</div>'+(r.sub?'<div class="ds">'+r.sub+'</div>':'')+(r.cur!=='ARS'?'<div class="ds">'+money(Math.abs(r.native),r.cur)+' → pesos</div>':'')+'</div><div class="damt neg">'+money(Math.abs(r.ars))+'</div></div>';});
+    if(rem.length){h+='<div class="debtsub">Recordatorios del mes (impagos)</div>';rem.forEach(r=>{h+='<div class="debtrow"><div class="dinfo"><div class="dn">'+esc(r.name)+'</div>'+(r.cur!=='ARS'?'<div class="ds">en pesos</div>':'')+'</div><div class="damt neg">'+money(r.ars)+'</div></div>';});}
     h+='</div><div class="debttot"><span>Total a deber</span><span class="neg">'+money(Math.abs(tot))+'</span></div>';}
   $('#debtBody').innerHTML=h;$('#debtScrim').classList.add('on');
 }
