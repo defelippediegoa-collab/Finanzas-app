@@ -64,6 +64,9 @@
   .tx .mid{flex:1;min-width:0;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tx .amt{font-weight:600;font-size:12.5px;white-space:nowrap}
   .detnav{display:flex;align-items:center;justify-content:center;gap:26px;padding:10px 16px;color:var(--txt);font-weight:600;font-size:14px}
+  .cardmode{display:flex;gap:0;margin:2px 16px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .cardmode .cm{flex:1;background:none;border:none;color:var(--muted);padding:8px 6px;font-size:12px;cursor:pointer}
+  .cardmode .cm.on{background:var(--accent);color:#fff;font-weight:600}
   .detnav button{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 8px;line-height:1}
   .detsum{display:flex;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .detsum>div{flex:1;text-align:center;padding:9px 4px}
@@ -196,7 +199,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v22</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v23</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -677,12 +680,14 @@ function showDetail(title){detail=true;$('#hdrMonth').classList.add('hidden');$(
   ['trans','stats','acc','proj'].forEach(id=>$('#view-'+id).classList.add('hidden'));$('#view-detail').classList.remove('hidden');}
 function closeDetail(){detail=null;detailRefresh=null;$('#hdrBack').classList.add('hidden');$('#hdrMonth').classList.remove('hidden');$('#view-detail').classList.add('hidden');setView(view);}
 $('#backBtn').onclick=closeDetail;
-let detMonth=null;
+let detMonth=null,detCardMode='gasto';
 function openAccountDetail(name){
   const a=acct(name);const isCard=a&&a.type==='Tarjetas de crédito';const c=a?a.currency:'ARS';
   if(!detMonth)detMonth=new Date(TODAY.getFullYear(),TODAY.getMonth(),1);
   const m=ym(detMonth);
-  const list=DB.tx.filter(t=>(t.account===name||t.from===name||t.to===name)&&ymOf(t.date)===m).sort((x,y)=>y.date.localeCompare(x.date));
+  const useVenc=isCard&&detCardMode==='venc';
+  const inMonth=t=>(useVenc&&t.type==='expense'&&t.account===name)?payMonthOf(t)===m:ymOf(t.date)===m;
+  const list=DB.tx.filter(t=>(t.account===name||t.from===name||t.to===name)&&inMonth(t)).sort((x,y)=>y.date.localeCompare(x.date));
   let dep=0,ret=0;
   list.forEach(t=>{if(t.type==='income'&&t.account===name)dep+=t.amount;else if(t.type==='expense'&&t.account===name)ret+=t.amount;else if(t.type==='transfer'){if(t.to===name)dep+=(t.amountTo!=null?t.amountTo:t.amount);if(t.from===name)ret+=t.amount;}});
   let h='';
@@ -694,12 +699,14 @@ function openAccountDetail(name){
     h+='<div class="editbtn" id="payCardBtn" style="background:var(--accent);color:#fff;border:none">Pagar tarjeta (liquidación)</div>';
   } else {const b=liveBalance(name);h+='<div class="dhero"><div class="dl">'+name+(a?(' · '+a.type):'')+'</div><div class="dv '+sgn(b)+'">'+money(b,c)+'</div></div>';}
   h+='<div class="editbtn" id="editAccBtn">Editar cuenta</div>';
-  h+='<div class="detnav"><button id="detPrev">‹</button><span>'+monthName(detMonth)+'</span><button id="detNext">›</button></div>';
+  if(isCard)h+='<div class="cardmode"><button class="cm'+(detCardMode==='gasto'?' on':'')+'" id="cmGasto">Mes de gasto</button><button class="cm'+(detCardMode==='venc'?' on':'')+'" id="cmVenc">Mes de vencimiento</button></div>';
+  h+='<div class="detnav"><button id="detPrev">‹</button><span>'+monthName(detMonth)+(useVenc?' · venc.':'')+'</span><button id="detNext">›</button></div>';
   h+='<div class="detsum"><div><small>Depósito</small><div class="sv pos">'+money(dep,c)+'</div></div><div><small>Retiro</small><div class="sv neg">'+money(ret,c)+'</div></div><div><small>Balance</small><div class="sv '+sgn(dep-ret)+'">'+money(dep-ret,c)+'</div></div></div>';
   h+=list.length?dayGroups(list):'<div class="empty" style="padding:22px">Sin movimientos en '+monthName(detMonth)+'.</div>';
   $('#detailBody').innerHTML=h;showDetail(name);detailRefresh=()=>openAccountDetail(name);
   $('#editAccBtn').onclick=()=>openAcc(name);
   if(isCard)$('#payCardBtn').onclick=()=>payCard(name);
+  if(isCard){$('#cmGasto').onclick=()=>{detCardMode='gasto';openAccountDetail(name);};$('#cmVenc').onclick=()=>{detCardMode='venc';openAccountDetail(name);};}
   $('#detPrev').onclick=()=>{detMonth=new Date(detMonth.getFullYear(),detMonth.getMonth()-1,1);openAccountDetail(name);};
   $('#detNext').onclick=()=>{detMonth=new Date(detMonth.getFullYear(),detMonth.getMonth()+1,1);openAccountDetail(name);};
   bindTx('#detailBody');
