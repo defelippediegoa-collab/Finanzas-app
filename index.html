@@ -201,7 +201,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v24</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v25</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -236,7 +236,7 @@
   </div>
 
   <div class="view hidden" id="view-proj">
-    <div class="pj-hero"><div class="lbl">Dinero disponible hoy</div><div class="big" id="pj-now">0.00</div><div class="sub">Efectivo y cuentas en pesos, sin tarjetas ni ahorros</div></div>
+    <div class="pj-hero"><div class="lbl">Capital hoy</div><div class="big" id="pj-now">0.00</div><div class="sub">Todas tus cuentas, sin tarjetas ni cuentas ocultas</div></div>
     <div class="pj-sec pjtoggle" id="remToggle"><span class="rtoglbl"><span class="caret" id="remCaret">▸</span> Recordatorios <span class="cnt" id="remCount"></span></span><button id="addRem">+ Recordatorio</button></div>
     <div id="reminders" class="hidden"></div>
     <div class="pj-sec"><span>Proyección próximos meses</span></div>
@@ -606,7 +606,9 @@ function renderAccounts(){
 }
 
 /* ---------- PROYECCION ---------- */
-function liquidNow(){let s=0;DB.accounts.forEach(a=>{if(a.currency==='ARS'&&(a.type==='Efectivo'||a.type==='Cuentas'||a.type==='Tarjetas de débito'))s+=liveBalance(a.name);});return s;}
+// Capital de arranque de la proyección: mismo criterio que la celda "Capital" de Cuentas.
+// Suma los saldos de las cuentas NO ocultas (excluye tarjetas, que son deuda, y las cuentas ocultas/ahorros).
+function capitalNow(){let s=0;DB.accounts.forEach(a=>{if(a.includeInTotal===false)return;if(a.type==='Tarjetas de crédito')return;const b=toARS(liveBalance(a.name),a.currency);if(b==null||b<0)return;s+=b;});return s;}
 function remActiveIn(r,m){if(r.from&&m<r.from)return false;if(r.freq==='once')return m===r.from;if(r.until&&m>r.until)return false;return true;}
 function remAmount(r,m){let amt=r.amount;if(Array.isArray(r.changes)){r.changes.filter(c=>c&&c.from&&c.amount>0).sort((a,b)=>a.from<b.from?-1:1).forEach(c=>{if(m>=c.from)amt=c.amount;});}return amt;}
 function renderReminders(){
@@ -630,7 +632,7 @@ function pjTreeHTML(kids){
   }).join('');
 }
 function renderProjMonths(){
-  const now=liquidNow();$('#pj-now').textContent=money(now);$('#pj-now').className='big '+sgn(now);
+  const now=capitalNow();$('#pj-now').textContent=money(now);$('#pj-now').className='big '+sgn(now);
   const start=new Date(TODAY.getFullYear(),TODAY.getMonth(),1);let running=now,html='';const series=[];
   for(let i=0;i<7;i++){const dd=new Date(start.getFullYear(),start.getMonth()+i,1),m=ym(dd);const esMesActual=(i===0);
     // vencimientos de tarjeta = cuotas/consumos cuyo MES DE PAGO cae en este mes (las vas corrigiendo vos)
@@ -682,7 +684,7 @@ function projChart(series){
     svg+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(H-6)+'" font-size="9" fill="var(--muted2)" text-anchor="middle">'+s.short+'</text>';
   });
   svg+='<line x1="'+padX+'" y1="'+y0.toFixed(1)+'" x2="'+(W-padX)+'" y2="'+y0.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>';
-  return '<div style="margin:0 16px 6px;padding:12px 6px 4px;background:var(--bg2);border:1px solid var(--line);border-radius:14px"><div style="font-size:11px;color:var(--muted);padding:0 10px 4px">Dinero disponible proyectado (fin de cada mes)</div><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+svg+'</svg></div>';
+  return '<div style="margin:0 16px 6px;padding:12px 6px 4px;background:var(--bg2);border:1px solid var(--line);border-radius:14px"><div style="font-size:11px;color:var(--muted);padding:0 10px 4px">Capital proyectado (fin de cada mes)</div><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+svg+'</svg></div>';
 }
 
 /* ---------- DETAIL: account ---------- */
