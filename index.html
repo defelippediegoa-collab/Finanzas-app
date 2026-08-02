@@ -37,6 +37,15 @@
   .acccell.tapcell{cursor:pointer}
   .acccell .acl{font-size:12px;color:var(--muted);margin-bottom:3px}
   .acccell .acv{font-size:16px;font-weight:700}
+  .greet{padding:16px 18px 0}
+  .greet .gh1{font-size:22px;font-weight:800;letter-spacing:-.3px}
+  .greet .gh2{font-size:12.5px;color:var(--muted);text-transform:capitalize;margin-top:2px}
+  .daily{margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+  .daily .dlbl{font-size:12.5px;color:var(--muted)}
+  .daily .dval{font-size:21px;font-weight:800;margin:3px 0 2px}
+  .daily .dsub{font-size:11.5px;color:var(--muted2);margin-bottom:7px}
+  .daily .dbar{height:6px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}
+  .daily .dbar i{display:block;height:100%;background:var(--accent);border-radius:4px}
   .hidsum{display:flex;justify-content:space-between;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);background:#171a2b}
   .searchbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:#171a2b}
   .searchbar .si{font-size:13px;opacity:.6}
@@ -214,17 +223,22 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v27</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v28</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
   <div class="view" id="view-trans">
-    <div class="searchbar"><span class="si">🔎</span><input id="txSearch" placeholder="Buscar nota, categoría, cuenta, monto…" autocomplete="off"><button id="txSearchClear" class="hidden">✕</button></div>
-    <div class="strip">
-      <div class="cell"><div class="lbl">Ingresos</div><div class="val pos" id="s-inc">0.00</div></div>
-      <div class="cell"><div class="lbl">Gastos</div><div class="val neg" id="s-exp">0.00</div></div>
-      <div class="cell"><div class="lbl">Balance</div><div class="val" id="s-bal">0.00</div></div>
+    <div class="greet"><div class="gh1">Hola, Diego 👋</div><div class="gh2" id="greetDate"></div></div>
+    <div class="acchero">
+      <div class="ahlbl">Balance del mes</div>
+      <div class="big" id="s-bal">0.00</div>
+      <div class="acccells">
+        <div class="acccell"><div class="acl">Ingresos</div><div class="acv pos" id="s-inc">0.00</div></div>
+        <div class="acccell"><div class="acl">Gastos</div><div class="acv neg" id="s-exp">0.00</div></div>
+      </div>
+      <div class="daily hidden" id="s-daily"></div>
     </div>
+    <div class="searchbar"><span class="si">🔎</span><input id="txSearch" placeholder="Buscar nota, categoría, cuenta, monto…" autocomplete="off"><button id="txSearchClear" class="hidden">✕</button></div>
     <div id="diario"></div>
   </div>
 
@@ -468,7 +482,16 @@ function renderDiario(){
               :DB.tx.filter(t=>ymOf(t.date)===ym(cur)).sort((a,b)=>b.date.localeCompare(a.date));
   let inc=0,exp=0;list.forEach(t=>{if(!isARS(t))return;if(t.type==='income')inc+=t.amount;else if(t.type==='expense')exp+=t.amount;});
   $('#s-inc').textContent=money(inc);$('#s-exp').textContent=money(exp);
-  $('#s-bal').textContent=money(inc-exp);$('#s-bal').className='val '+sgn(inc-exp);
+  $('#s-bal').textContent=money(inc-exp);$('#s-bal').className='big '+sgn(inc-exp);
+  const dEl=$('#s-daily');const esMesHoy=!q&&ym(cur)===ym(TODAY);
+  if(esMesHoy){
+    const dim=new Date(TODAY.getFullYear(),TODAY.getMonth()+1,0).getDate();
+    const rem=dim-TODAY.getDate()+1;
+    const dispo=inc-exp;const per=dispo>0?dispo/rem:0;
+    const pct=inc>0?Math.min(100,Math.round(exp/inc*100)):0;
+    if(per>0){dEl.innerHTML='<div class="dlbl">Podés gastar por día</div><div class="dval pos">'+money(per)+'</div><div class="dsub">'+rem+' día'+(rem===1?'':'s')+' restante'+(rem===1?'':'s')+' del mes · gastado '+pct+'%</div><div class="dbar"><i style="width:'+pct+'%"></i></div>';dEl.classList.remove('hidden');}
+    else dEl.classList.add('hidden');
+  } else dEl.classList.add('hidden');
   if(!list.length){$('#diario').innerHTML=q?'<div class="empty">Sin resultados para <b>'+esc(txQuery)+'</b>.</div>':'<div class="empty">No hay movimientos en <b>'+monthName(cur)+'</b>.<br>Tocá <b>+</b> para agregar uno.</div>';return;}
   $('#diario').innerHTML=(q?'<div class="searchinfo">'+list.length+(list.length===1?' resultado':' resultados')+' en todos los meses</div>':'')+dayGroups(list);bindTx('#diario');
 }
@@ -1007,6 +1030,7 @@ $('#syncPush').onclick=()=>cloudPush(false);$('#syncPull').onclick=()=>cloudPull
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&DB.syncUrl&&DB.syncAuto)cloudPull(true);});
 
 Store.save(DB);setView('trans');
+$('#greetDate').textContent=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
 if(DB.syncUrl&&DB.syncAuto)cloudPull(true);
 if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){navigator.serviceWorker.register('sw.js').catch(()=>{});}
 </script>
