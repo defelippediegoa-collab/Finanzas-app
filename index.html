@@ -46,6 +46,9 @@
   .daily .dsub{font-size:11.5px;color:var(--muted2);margin-bottom:7px}
   .daily .dbar{height:6px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}
   .daily .dbar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+  .balmode{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:4px}
+  .balmode .bm{background:none;border:none;color:var(--muted);padding:6px 11px;font-size:11.5px;cursor:pointer}
+  .balmode .bm.on{background:var(--accent);color:#fff;font-weight:600}
   .hidsum{display:flex;justify-content:space-between;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);background:#171a2b}
   .searchbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:#171a2b}
   .searchbar .si{font-size:13px;opacity:.6}
@@ -223,18 +226,18 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v28</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v29</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
   <div class="view" id="view-trans">
     <div class="greet"><div class="gh1">Hola, Diego 👋</div><div class="gh2" id="greetDate"></div></div>
     <div class="acchero">
-      <div class="ahlbl">Balance del mes</div>
+      <div class="balmode"><button class="bm" id="bmMes">Balance del mes</button><button class="bm" id="bmCaja">Balance de caja</button></div>
       <div class="big" id="s-bal">0.00</div>
       <div class="acccells">
         <div class="acccell"><div class="acl">Ingresos</div><div class="acv pos" id="s-inc">0.00</div></div>
-        <div class="acccell"><div class="acl">Gastos</div><div class="acv neg" id="s-exp">0.00</div></div>
+        <div class="acccell"><div class="acl" id="s-exp-lbl">Gastos</div><div class="acv neg" id="s-exp">0.00</div></div>
       </div>
       <div class="daily hidden" id="s-daily"></div>
     </div>
@@ -448,7 +451,7 @@ const PALETTE=['--c1','--c2','--c3','--c4','--c5','--c6','--c7'];
 
 /* ---------- state ---------- */
 let DB=normalize(Store.load()||defaultDB());
-let view='trans',cur=(()=>{const d=new Date();d.setDate(1);d.setHours(12,0,0,0);return d;})(),statKind='income',editId=null,remEditId=null,accEditName=null,mgrKind='expense',mgrSubCat=null,detail=null,acCur='ARS',txQuery='';
+let view='trans',cur=(()=>{const d=new Date();d.setDate(1);d.setHours(12,0,0,0);return d;})(),statKind='income',editId=null,remEditId=null,accEditName=null,mgrKind='expense',mgrSubCat=null,detail=null,acCur='ARS',txQuery='',homeMode=localStorage.getItem('fin_home_mode')||'mes';
 const TODAY=(()=>{const d=new Date();d.setHours(23,59,59,999);return d;})();
 let detailRefresh=null;
 
@@ -480,8 +483,22 @@ function renderDiario(){
   const q=(txQuery||'').trim().toLowerCase();
   const list=q?DB.tx.filter(t=>txMatch(t,q)).sort((a,b)=>b.date.localeCompare(a.date))
               :DB.tx.filter(t=>ymOf(t.date)===ym(cur)).sort((a,b)=>b.date.localeCompare(a.date));
-  let inc=0,exp=0;list.forEach(t=>{if(!isARS(t))return;if(t.type==='income')inc+=t.amount;else if(t.type==='expense')exp+=t.amount;});
+  let inc=0,exp=0;
+  if(q){list.forEach(t=>{if(!isARS(t))return;if(t.type==='income')inc+=t.amount;else if(t.type==='expense')exp+=t.amount;});}
+  else{
+    const mtx=DB.tx.filter(t=>ymOf(t.date)===ym(cur));
+    mtx.forEach(t=>{if(!isARS(t))return;
+      if(t.type==='income'&&!isCard(t.account))inc+=t.amount;
+      else if(homeMode==='mes'){ // consumido en el mes: tarjeta + efectivo/débito
+        if(t.type==='expense')exp+=t.amount;
+      } else { // caja: plata que salió de cuentas: gastos no-tarjeta + pagos de tarjeta
+        if(t.type==='expense'&&!isCard(t.account))exp+=t.amount;
+        else if(t.type==='transfer'&&isCard(t.to)&&!isCard(t.from))exp+=t.amount;
+      }});
+  }
   $('#s-inc').textContent=money(inc);$('#s-exp').textContent=money(exp);
+  $('#s-exp-lbl').textContent=(!q&&homeMode==='caja')?'Salidas':'Gastos';
+  $('#bmMes').classList.toggle('on',homeMode==='mes');$('#bmCaja').classList.toggle('on',homeMode==='caja');
   $('#s-bal').textContent=money(inc-exp);$('#s-bal').className='big '+sgn(inc-exp);
   const dEl=$('#s-daily');const esMesHoy=!q&&ym(cur)===ym(TODAY);
   if(esMesHoy){
@@ -792,6 +809,8 @@ $('#tab-inc').onclick=()=>{statKind='income';$('#tab-inc').classList.add('on');$
 $('#tab-exp').onclick=()=>{statKind='expense';$('#tab-exp').classList.add('on');$('#tab-inc').classList.remove('on');renderStats();};
 $('#txSearch').oninput=e=>{txQuery=e.target.value;$('#txSearchClear').classList.toggle('hidden',!txQuery);renderDiario();};
 $('#txSearchClear').onclick=()=>{txQuery='';$('#txSearch').value='';$('#txSearchClear').classList.add('hidden');renderDiario();$('#txSearch').focus();};
+$('#bmMes').onclick=()=>{homeMode='mes';localStorage.setItem('fin_home_mode','mes');renderDiario();};
+$('#bmCaja').onclick=()=>{homeMode='caja';localStorage.setItem('fin_home_mode','caja');renderDiario();};
 function showDebtBreakdown(){
   const rows=[];let tot=0;
   DB.accounts.forEach(a=>{if(a.includeInTotal===false)return;
