@@ -49,6 +49,9 @@
   .balmode{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:4px}
   .balmode .bm{background:none;border:none;color:var(--muted);padding:6px 11px;font-size:11.5px;cursor:pointer}
   .balmode .bm.on{background:var(--accent);color:#fff;font-weight:600}
+  .txfilter{display:flex;gap:8px;padding:8px 16px 4px}
+  .txfilter .tf{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:12px;color:var(--muted);padding:9px 4px;font-size:12.5px;cursor:pointer}
+  .txfilter .tf.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
   .hidsum{display:flex;justify-content:space-between;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);background:#171a2b}
   .searchbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:#171a2b}
   .searchbar .si{font-size:13px;opacity:.6}
@@ -226,7 +229,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v30</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v32</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -238,11 +241,12 @@
       <div class="acccells">
         <div class="acccell"><div class="acl">Ingresos</div><div class="acv pos" id="s-inc">0.00</div></div>
         <div class="acccell"><div class="acl" id="s-exp-lbl">Gastos</div><div class="acv neg" id="s-exp">0.00</div></div>
-        <div class="acccell" id="s-rem-cell"><div class="acl">Recordatorios</div><div class="acv" id="s-rem" style="color:var(--warn)">0.00</div></div>
+        <div class="acccell" id="s-rem-cell"><div class="acl" id="s-rem-lbl">Recordatorios</div><div class="acv" id="s-rem" style="color:var(--warn)">0.00</div></div>
       </div>
       <div class="daily hidden" id="s-daily"></div>
     </div>
     <div class="searchbar"><span class="si">🔎</span><input id="txSearch" placeholder="Buscar nota, categoría, cuenta, monto…" autocomplete="off"><button id="txSearchClear" class="hidden">✕</button></div>
+    <div class="txfilter"><button class="tf" id="tfCard">💳 Tarjetas</button><button class="tf" id="tfCash">💵 Contado</button><button class="tf on" id="tfAll">Todas</button></div>
     <div id="diario"></div>
   </div>
 
@@ -452,7 +456,7 @@ const PALETTE=['--c1','--c2','--c3','--c4','--c5','--c6','--c7'];
 
 /* ---------- state ---------- */
 let DB=normalize(Store.load()||defaultDB());
-let view='trans',cur=(()=>{const d=new Date();d.setDate(1);d.setHours(12,0,0,0);return d;})(),statKind='income',editId=null,remEditId=null,accEditName=null,mgrKind='expense',mgrSubCat=null,detail=null,acCur='ARS',txQuery='',homeMode=localStorage.getItem('fin_home_mode')||'mes';
+let view='trans',cur=(()=>{const d=new Date();d.setDate(1);d.setHours(12,0,0,0);return d;})(),statKind='income',editId=null,remEditId=null,accEditName=null,mgrKind='expense',mgrSubCat=null,detail=null,acCur='ARS',txQuery='',homeMode=localStorage.getItem('fin_home_mode')||'mes',txFilter='all';
 const TODAY=(()=>{const d=new Date();d.setHours(23,59,59,999);return d;})();
 let detailRefresh=null;
 
@@ -497,9 +501,13 @@ function renderDiario(){
         else if(t.type==='transfer'&&isCard(t.to)&&!isCard(t.from))exp+=t.amount;
       }});
   }
-  const rem=q?0:remDebtARS(ym(cur));
+  let rem=q?0:remDebtARS(ym(cur));
+  if(!q&&homeMode==='caja'&&ym(cur)===ym(TODAY)){ // en caja, sumar lo que falta pagar de tarjetas (ya neteado con pagos hechos)
+    DB.accounts.forEach(a=>{if(a.type!=='Tarjetas de crédito'||a.includeInTotal===false)return;rem+=toARS(cardSaldos(a.name).aPagar,a.currency)||0;});
+  }
   $('#s-inc').textContent=money(inc);$('#s-exp').textContent=money(exp);
   $('#s-rem').textContent=money(rem);$('#s-rem-cell').classList.toggle('hidden',!!q);
+  $('#s-rem-lbl').textContent=(!q&&homeMode==='caja')?'Compromisos':'Recordatorios';
   $('#s-exp-lbl').textContent=(!q&&homeMode==='caja')?'Salidas':'Gastos';
   $('#bmMes').classList.toggle('on',homeMode==='mes');$('#bmCaja').classList.toggle('on',homeMode==='caja');
   $('#s-bal').textContent=money(inc-exp-rem);$('#s-bal').className='big '+sgn(inc-exp-rem);
@@ -512,8 +520,11 @@ function renderDiario(){
     if(per>0){dEl.innerHTML='<div class="dlbl">Podés gastar por día</div><div class="dval pos">'+money(per)+'</div><div class="dsub">'+dias+' día'+(dias===1?'':'s')+' restante'+(dias===1?'':'s')+' del mes · comprometido '+pct+'%</div><div class="dbar"><i style="width:'+pct+'%"></i></div>';dEl.classList.remove('hidden');}
     else dEl.classList.add('hidden');
   } else dEl.classList.add('hidden');
-  if(!list.length){$('#diario').innerHTML=q?'<div class="empty">Sin resultados para <b>'+esc(txQuery)+'</b>.</div>':'<div class="empty">No hay movimientos en <b>'+monthName(cur)+'</b>.<br>Tocá <b>+</b> para agregar uno.</div>';return;}
-  $('#diario').innerHTML=(q?'<div class="searchinfo">'+list.length+(list.length===1?' resultado':' resultados')+' en todos los meses</div>':'')+dayGroups(list);bindTx('#diario');
+  const enTarjeta=t=>t.type==='transfer'?(isCard(t.from)||isCard(t.to)):isCard(t.account);
+  const flist=txFilter==='all'?list:list.filter(t=>txFilter==='card'?enTarjeta(t):!enTarjeta(t));
+  ['tfCard','tfCash','tfAll'].forEach(id=>$('#'+id).classList.toggle('on',(id==='tfCard'&&txFilter==='card')||(id==='tfCash'&&txFilter==='cash')||(id==='tfAll'&&txFilter==='all')));
+  if(!flist.length){$('#diario').innerHTML=q?'<div class="empty">Sin resultados para <b>'+esc(txQuery)+'</b>.</div>':'<div class="empty">No hay movimientos'+(txFilter!=='all'?' con ese filtro':'')+' en <b>'+monthName(cur)+'</b>.'+(txFilter==='all'?'<br>Tocá <b>+</b> para agregar uno.':'')+'</div>';return;}
+  $('#diario').innerHTML=(q?'<div class="searchinfo">'+flist.length+(flist.length===1?' resultado':' resultados')+' en todos los meses</div>':'')+dayGroups(flist);bindTx('#diario');
 }
 function dayGroups(list){
   const days={};list.forEach(t=>(days[t.date]=days[t.date]||[]).push(t));
@@ -814,6 +825,9 @@ $('#txSearch').oninput=e=>{txQuery=e.target.value;$('#txSearchClear').classList.
 $('#txSearchClear').onclick=()=>{txQuery='';$('#txSearch').value='';$('#txSearchClear').classList.add('hidden');renderDiario();$('#txSearch').focus();};
 $('#bmMes').onclick=()=>{homeMode='mes';localStorage.setItem('fin_home_mode','mes');renderDiario();};
 $('#bmCaja').onclick=()=>{homeMode='caja';localStorage.setItem('fin_home_mode','caja');renderDiario();};
+$('#tfCard').onclick=()=>{txFilter='card';renderDiario();};
+$('#tfCash').onclick=()=>{txFilter='cash';renderDiario();};
+$('#tfAll').onclick=()=>{txFilter='all';renderDiario();};
 function showDebtBreakdown(){
   const rows=[];let tot=0;
   DB.accounts.forEach(a=>{if(a.includeInTotal===false)return;
