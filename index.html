@@ -52,6 +52,20 @@
   .txfilter{display:flex;gap:8px;padding:8px 16px 4px}
   .txfilter .tf{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:12px;color:var(--muted);padding:9px 4px;font-size:12.5px;cursor:pointer}
   .txfilter .tf.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .cardtblwrap{margin:0 16px 12px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;overflow-x:auto}
+  .cardtbl{border-collapse:collapse;width:100%;min-width:520px;font-size:11.5px}
+  .cardtbl th,.cardtbl td{padding:8px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+  .cardtbl th:first-child{text-align:left;color:var(--txt);font-weight:600;position:sticky;left:0;background:var(--bg2)}
+  .cardtbl tr:first-child th{color:var(--muted);font-weight:500;font-size:10.5px;text-transform:uppercase}
+  .cardtbl td.neg{color:var(--expense);font-weight:600}
+  .cardtbl td.z{color:var(--muted2)}
+  .cardtbl tr.tot th,.cardtbl tr.tot td{border-bottom:none;font-weight:700;color:var(--txt)}
+  .catlist{margin:0 16px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .catrow{padding:11px 16px 9px;border-bottom:1px solid var(--line)}
+  .catrow .crtop{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px}
+  .catrow .crtop small{color:var(--muted)}
+  .catrow .crbar{height:6px;background:rgba(255,255,255,.07);border-radius:4px;overflow:hidden}
+  .catrow .crbar i{display:block;height:100%;background:var(--accent);border-radius:4px}
   .hidsum{display:flex;justify-content:space-between;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);background:#171a2b}
   .searchbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:#171a2b}
   .searchbar .si{font-size:13px;opacity:.6}
@@ -229,7 +243,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v32</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v33</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -260,6 +274,10 @@
     <div class="legend" id="legend"></div>
   </div>
 
+  <div class="view hidden" id="view-cards">
+    <div id="cardsBody"></div>
+  </div>
+
   <div class="view hidden" id="view-acc">
     <div class="acchero">
       <div class="ahlbl">Balance</div>
@@ -288,6 +306,7 @@
   <div class="nav">
     <div class="n on" data-v="trans"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h10"/></svg>Trans.</div>
     <div class="n" data-v="stats"><svg viewBox="0 0 24 24"><path d="M5 20V9M12 20V4M19 20v-7"/></svg>Estad.</div>
+    <div class="n" data-v="cards"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>Tarjetas</div>
     <div class="n" data-v="acc"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Cuentas</div>
     <div class="n" data-v="proj"><svg viewBox="0 0 24 24"><path d="M4 18 9 12l4 4 7-9"/><path d="M14 7h6v6"/></svg>Proyec.</div>
   </div>
@@ -812,10 +831,43 @@ function openCategoryDetail(cat){
 }
 
 /* ---------- dispatch ---------- */
-function render(){$('#curM').textContent=monthName(cur);if(view==='trans')renderDiario();else if(view==='stats')renderStats();else if(view==='acc')renderAccounts();else if(view==='proj')renderReminders();}
+function render(){$('#curM').textContent=monthName(cur);if(view==='trans')renderDiario();else if(view==='stats')renderStats();else if(view==='acc')renderAccounts();else if(view==='proj')renderReminders();else if(view==='cards')renderCardsView();}
+function renderCardsView(){
+  const cards=DB.accounts.filter(a=>a.type==='Tarjetas de crédito'&&a.includeInTotal!==false);
+  const months=[];for(let i=0;i<6;i++){const d=new Date(TODAY.getFullYear(),TODAY.getMonth()+i,1);months.push({m:ym(d),lab:d.toLocaleDateString('es-AR',{month:'short'}).replace('.','')});}
+  // monto por tarjeta y mes: i=0 vencido neteado, i=1 próximo neteado, i>=2 suma cruda por mes de pago
+  const cellVal=(name,i,m)=>{const s=cardSaldos(name);if(i===0)return s.aPagar;if(i===1)return s.restante;
+    return DB.tx.filter(t=>t.type==='expense'&&t.account===name&&payMonthOf(t)===m).reduce((s2,t)=>s2+t.amount,0);};
+  let totV=0,totP=0;
+  let rows='';const colTot=new Array(6).fill(0);
+  cards.forEach(a=>{
+    let tds='';months.forEach((mo,i)=>{const v=cellVal(a.name,i,mo.m);const ars=toARS(v,a.currency)||0;colTot[i]+=ars;
+      tds+='<td class="'+(v>0?(i===0?'neg':''):'z')+'">'+(v>0?money(v,a.currency):'—')+'</td>';});
+    rows+='<tr><th>'+esc(a.name)+'</th>'+tds+'</tr>';
+  });
+  totV=colTot[0];totP=colTot[1];
+  let head='<tr><th></th>';months.forEach((mo,i)=>{head+='<th>'+mo.lab+(i===0?' ·venc':'')+'</th>';});head+='</tr>';
+  let totrow='<tr class="tot"><th>Total ARS</th>';colTot.forEach(v=>{totrow+='<td>'+(v>0?money(v):'—')+'</td>';});totrow+='</tr>';
+  let h='<div class="acchero"><div class="ahlbl">Vencido · a pagar (todas)</div><div class="big neg">'+money(totV)+'</div>'+
+    '<div class="acccells"><div class="acccell"><div class="acl">Próximo venc.</div><div class="acv" style="color:var(--warn)">'+money(totP)+'</div></div>'+
+    '<div class="acccell"><div class="acl">Meses siguientes</div><div class="acv">'+money(colTot.slice(2).reduce((a,b)=>a+b,0))+'</div></div></div></div>';
+  h+='<div class="pj-sec"><span>Resumen proyectado por tarjeta</span></div>';
+  h+='<div class="cardtblwrap"><table class="cardtbl">'+head+rows+totrow+'</table></div>';
+  // categorías de los consumos pendientes (mes de pago >= mes actual)
+  const pend=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&payMonthOf(t)>=MESACTUAL);
+  const byCat={};let totC=0;
+  pend.forEach(t=>{const ars=toARS(t.amount,t.currency||'ARS')||0;byCat[t.category||'Otros']=(byCat[t.category||'Otros']||0)+ars;totC+=ars;});
+  h+='<div class="pj-sec"><span>Categorías de lo que estás pagando</span></div>';
+  if(!totC)h+='<div class="empty">No hay consumos de tarjeta pendientes.</div>';
+  else{h+='<div class="catlist">';
+    Object.entries(byCat).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{const pct=Math.round(v/totC*100);
+      h+='<div class="catrow"><div class="crtop"><span>'+esc(c)+'</span><span><b>'+money(v)+'</b> <small>'+pct+'%</small></span></div><div class="crbar"><i style="width:'+pct+'%"></i></div></div>';});
+    h+='<div class="debttot" style="padding:12px 18px 20px"><span>Total pendiente</span><span class="neg">'+money(totC)+'</span></div></div>';}
+  $('#cardsBody').innerHTML=h;
+}
 function setView(v){view=v;detail=null;txQuery='';{const ts=$('#txSearch');if(ts){ts.value='';$('#txSearchClear').classList.add('hidden');}}$('#hdrBack').classList.add('hidden');$('#hdrMonth').classList.remove('hidden');$('#view-detail').classList.add('hidden');
   document.querySelectorAll('.nav .n').forEach(n=>n.classList.toggle('on',n.dataset.v===v));
-  ['trans','stats','acc','proj'].forEach(id=>$('#view-'+id).classList.toggle('hidden',id!==v));render();}
+  ['trans','stats','acc','proj','cards'].forEach(id=>$('#view-'+id).classList.toggle('hidden',id!==v));render();}
 document.querySelectorAll('.nav .n').forEach(n=>n.onclick=()=>setView(n.dataset.v));
 $('#prevM').onclick=()=>{cur=new Date(cur.getFullYear(),cur.getMonth()-1,1);render();};
 $('#nextM').onclick=()=>{cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);render();};
