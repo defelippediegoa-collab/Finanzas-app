@@ -66,6 +66,8 @@
   .catrow .crtop small{color:var(--muted)}
   .catrow .crbar{height:6px;background:rgba(255,255,255,.07);border-radius:4px;overflow:hidden}
   .catrow .crbar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+  .catrow{cursor:pointer}.catrow:active{background:rgba(255,255,255,.03)}
+  .cardtbl td.tap{cursor:pointer;text-decoration:underline dotted rgba(255,255,255,.25);text-underline-offset:3px}
   .hidsum{display:flex;justify-content:space-between;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);background:#171a2b}
   .searchbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:#171a2b}
   .searchbar .si{font-size:13px;opacity:.6}
@@ -243,7 +245,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v33</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v34</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -412,6 +414,11 @@
 <div class="scrim" id="debtScrim"><div class="sheet">
   <h3><span>A deber · mes en curso</span><button class="x" id="closeDebt">×</button></h3>
   <div id="debtBody"></div>
+</div></div>
+
+<div class="scrim" id="cardDetScrim"><div class="sheet">
+  <h3><span id="cardDetTitle">Detalle</span><button class="x" id="closeCardDet">×</button></h3>
+  <div id="cardDetBody"></div>
 </div></div>
 
 <div class="toast" id="toast"></div>
@@ -842,7 +849,7 @@ function renderCardsView(){
   let rows='';const colTot=new Array(6).fill(0);
   cards.forEach(a=>{
     let tds='';months.forEach((mo,i)=>{const v=cellVal(a.name,i,mo.m);const ars=toARS(v,a.currency)||0;colTot[i]+=ars;
-      tds+='<td class="'+(v>0?(i===0?'neg':''):'z')+'">'+(v>0?money(v,a.currency):'—')+'</td>';});
+      tds+='<td '+(v>0?'data-acc="'+esc(a.name)+'" data-m="'+mo.m+'" data-i="'+i+'" data-lab="'+mo.lab+'"':'')+' class="'+(v>0?(i===0?'neg tap':'tap'):'z')+'">'+(v>0?money(v,a.currency):'—')+'</td>';});
     rows+='<tr><th>'+esc(a.name)+'</th>'+tds+'</tr>';
   });
   totV=colTot[0];totP=colTot[1];
@@ -861,9 +868,42 @@ function renderCardsView(){
   if(!totC)h+='<div class="empty">No hay consumos de tarjeta pendientes.</div>';
   else{h+='<div class="catlist">';
     Object.entries(byCat).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{const pct=Math.round(v/totC*100);
-      h+='<div class="catrow"><div class="crtop"><span>'+esc(c)+'</span><span><b>'+money(v)+'</b> <small>'+pct+'%</small></span></div><div class="crbar"><i style="width:'+pct+'%"></i></div></div>';});
+      h+='<div class="catrow" data-cat="'+esc(c)+'"><div class="crtop"><span>'+esc(c)+' ›</span><span><b>'+money(v)+'</b> <small>'+pct+'%</small></span></div><div class="crbar"><i style="width:'+pct+'%"></i></div></div>';});
     h+='<div class="debttot" style="padding:12px 18px 20px"><span>Total pendiente</span><span class="neg">'+money(totC)+'</span></div></div>';}
   $('#cardsBody').innerHTML=h;
+  document.querySelectorAll('#cardsBody .catrow').forEach(el=>el.onclick=()=>openCardCatDetail(el.dataset.cat));
+  document.querySelectorAll('#cardsBody .cardtbl td.tap').forEach(td=>td.onclick=()=>openCardMonthDetail(td.dataset.acc,td.dataset.m,+td.dataset.i,td.dataset.lab));
+}
+function stripInst(s){return (s||'').replace(/\s*\(\d+\/\d+\)\s*/g,' ').replace(/\s+/g,' ').trim();}
+// Detalle de una categoría: compras en cuotas agrupadas en una línea (cuotas restantes, valor cuota, total restante)
+function openCardCatDetail(cat){
+  const pend=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&payMonthOf(t)>=MESACTUAL&&(t.category||'Otros')===cat);
+  const groups={},singles=[];
+  pend.forEach(t=>{
+    if(t.inst&&t.inst.length===2){const base=stripInst(t.note)||t.sub||'—';const key=t.account+'|'+base+'|'+t.inst[1]+'|'+t.amount.toFixed(2);
+      const g=groups[key]=groups[key]||{name:base,acc:t.account,cur:t.currency||'ARS',N:t.inst[1],per:t.amount,count:0};g.count++;}
+    else singles.push(t);});
+  const rows=[];
+  Object.values(groups).forEach(g=>rows.push({name:g.name,sub:g.acc+' · quedan '+g.count+' de '+g.N+' cuotas · '+money(g.per,g.cur)+'/cuota',ars:toARS(g.per*g.count,g.cur)||0,nat:money(g.per*g.count,g.cur)}));
+  singles.forEach(t=>rows.push({name:stripInst(t.note)||t.sub||'—',sub:t.account+' · paga '+payMonthOf(t),ars:toARS(t.amount,t.currency||'ARS')||0,nat:money(t.amount,t.currency||'ARS')}));
+  rows.sort((a,b)=>b.ars-a.ars);
+  let tot=rows.reduce((s,r)=>s+r.ars,0);
+  let h='<div class="debtlist">';
+  rows.forEach(r=>{h+='<div class="debtrow"><div class="dinfo"><div class="dn">'+esc(r.name)+'</div><div class="ds">'+esc(r.sub)+'</div></div><div class="damt neg">'+r.nat+'</div></div>';});
+  h+='</div><div class="debttot"><span>Total pendiente</span><span class="neg">'+money(tot)+'</span></div>';
+  $('#cardDetTitle').textContent=cat;$('#cardDetBody').innerHTML=h;$('#cardDetScrim').classList.add('on');
+}
+// Detalle de una tarjeta en un mes puntual de la tabla proyectada
+function openCardMonthDetail(name,m,i,lab){
+  const items=DB.tx.filter(t=>t.type==='expense'&&t.account===name&&(i===0?payMonthOf(t)<=MESACTUAL:payMonthOf(t)===m)).sort((a,b)=>b.amount-a.amount);
+  const cur=curOf(name);
+  let h='<div class="debtlist">';let tot=0;
+  items.forEach(t=>{tot+=t.amount;
+    const nm=(stripInst(t.note)||t.sub||t.category||'—')+(t.inst?' ('+t.inst[0]+'/'+t.inst[1]+')':'');
+    h+='<div class="debtrow"><div class="dinfo"><div class="dn">'+esc(nm)+'</div><div class="ds">'+esc(t.category||'Otros')+(t.sub?' · '+esc(t.sub):'')+' · compra '+t.date+'</div></div><div class="damt neg">'+money(t.amount,cur)+'</div></div>';});
+  h+='</div><div class="debttot"><span>Total'+(i===0?' (antes de netear pagos)':'')+'</span><span class="neg">'+money(tot,cur)+'</span></div>';
+  if(i===0)h+='<div class="hint" style="padding:0 18px 18px">Los pagos que ya hiciste se descuentan del "vencido" que ves en la tabla.</div>';
+  $('#cardDetTitle').textContent=name+' · '+lab+(i===0?' (vencido)':'');$('#cardDetBody').innerHTML=h;$('#cardDetScrim').classList.add('on');
 }
 function setView(v){view=v;detail=null;txQuery='';{const ts=$('#txSearch');if(ts){ts.value='';$('#txSearchClear').classList.add('hidden');}}$('#hdrBack').classList.add('hidden');$('#hdrMonth').classList.remove('hidden');$('#view-detail').classList.add('hidden');
   document.querySelectorAll('.nav .n').forEach(n=>n.classList.toggle('on',n.dataset.v===v));
@@ -901,6 +941,8 @@ function showDebtBreakdown(){
 }
 $('#a-debt-cell').onclick=showDebtBreakdown;
 $('#closeDebt').onclick=()=>$('#debtScrim').classList.remove('on');
+$('#closeCardDet').onclick=()=>$('#cardDetScrim').classList.remove('on');
+$('#cardDetScrim').onclick=e=>{if(e.target===$('#cardDetScrim'))$('#cardDetScrim').classList.remove('on');};
 $('#remToggle').onclick=e=>{if(e.target.closest('#addRem'))return;const r=$('#reminders');const open=r.classList.toggle('hidden')===false;$('#remCaret').textContent=open?'▾':'▸';};
 $('#debtScrim').onclick=e=>{if(e.target===$('#debtScrim'))$('#debtScrim').classList.remove('on');};
 
