@@ -68,6 +68,9 @@
   .catrow .crbar i{display:block;height:100%;background:var(--accent);border-radius:4px}
   .catrow{cursor:pointer}.catrow:active{background:rgba(255,255,255,.03)}
   .cardtbl td.tap{cursor:pointer;text-decoration:underline dotted rgba(255,255,255,.25);text-underline-offset:3px}
+  .cardtbl td small{display:block;color:var(--muted2);font-size:9.5px;margin-top:1px}
+  .cardtbl .rk{display:inline-block;min-width:17px;height:17px;line-height:17px;text-align:center;background:rgba(124,108,240,.2);color:var(--accent);border-radius:6px;font-size:10px;font-weight:700;margin-right:7px}
+  .cardtbl tr:nth-child(2) .rk{background:var(--accent);color:#fff}
   .subdet>summary{padding:12px 18px}
   .subdet .subamts{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
   .subdet .subamts small{color:var(--muted);font-size:10.5px}
@@ -254,7 +257,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v35</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v36</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -891,6 +894,23 @@ function renderCardsView(){
     Object.entries(byCat).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{const pct=Math.round(v/totC*100);
       h+='<div class="catrow" data-cat="'+esc(c)+'"><div class="crtop"><span>'+esc(c)+' ›</span><span><b>'+money(v)+'</b> <small>'+pct+'%</small></span></div><div class="crbar"><i style="width:'+pct+'%"></i></div></div>';});
     h+='<div class="debttot" style="padding:12px 18px 20px"><span>Total pendiente</span><span class="neg">'+money(totC)+'</span></div></div>';}
+  // proyectado por categoría: valor y % de cada mes (por mes de pago exacto), ordenado por peso total
+  const catM={};const catColTot=new Array(6).fill(0);
+  DB.tx.forEach(t=>{if(t.type!=='expense'||!isCard(t.account))return;const pm=payMonthOf(t);
+    months.forEach((mo,i)=>{if(pm!==mo.m)return;
+      const c=t.category||'Otros';const ars=toARS(t.amount,t.currency||'ARS')||0;
+      (catM[c]=catM[c]||new Array(6).fill(0))[i]+=ars;catColTot[i]+=ars;});});
+  const catRows=Object.entries(catM).map(([c,vals])=>({c:c,vals:vals,tot:vals.reduce((a,b)=>a+b,0)})).sort((a,b)=>b.tot-a.tot);
+  if(catRows.length){
+    h+='<div class="pj-sec"><span>Proyectado por categoría</span></div>';
+    let chead='<tr><th></th>';months.forEach(mo=>{chead+='<th>'+mo.lab+'</th>';});chead+='</tr>';
+    let crows='';catRows.forEach((r,idx)=>{
+      let tds='';r.vals.forEach((v,i)=>{const pct=catColTot[i]>0?Math.round(v/catColTot[i]*100):0;
+        tds+='<td class="'+(v>0?'':'z')+'">'+(v>0?money(v)+'<small>'+pct+'%</small>':'—')+'</td>';});
+      crows+='<tr><th><span class="rk">'+(idx+1)+'</span>'+esc(r.c)+'</th>'+tds+'</tr>';});
+    let ctot='<tr class="tot"><th>Total ARS</th>';catColTot.forEach(v=>{ctot+='<td>'+(v>0?money(v):'—')+'</td>';});ctot+='</tr>';
+    h+='<div class="cardtblwrap"><table class="cardtbl">'+chead+crows+ctot+'</table></div>';
+  }
   $('#cardsBody').innerHTML=h;
   document.querySelectorAll('#cardsBody .catrow').forEach(el=>el.onclick=()=>openCardCatDetail(el.dataset.cat));
   document.querySelectorAll('#cardsBody .cardtbl td.tap').forEach(td=>td.onclick=()=>openCardMonthDetail(td.dataset.acc,td.dataset.m,+td.dataset.i,td.dataset.lab));
