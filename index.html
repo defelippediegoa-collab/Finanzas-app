@@ -49,6 +49,13 @@
   .balmode{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:4px}
   .balmode .bm{background:none;border:none;color:var(--muted);padding:6px 11px;font-size:11.5px;cursor:pointer}
   .balmode .bm.on{background:var(--accent);color:#fff;font-weight:600}
+  .fincard{margin:0 16px 4px;background:var(--bg2);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .fincard>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;font-size:13px;font-weight:600}
+  .fincard>summary::-webkit-details-marker{display:none}
+  .fincard .finhead{padding:2px 16px 8px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+  .finrow{display:flex;justify-content:space-between;gap:10px;padding:7px 16px;font-size:12.5px}
+  .finrow:last-child{padding-bottom:14px}
+  .finrow small{color:var(--muted);font-weight:400}
   .txfilter{display:flex;gap:8px;padding:8px 16px 4px}
   .txfilter .tf{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:12px;color:var(--muted);padding:9px 4px;font-size:12.5px;cursor:pointer}
   .txfilter .tf.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
@@ -257,7 +264,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v37</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v39</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -273,6 +280,7 @@
       </div>
       <div class="daily hidden" id="s-daily"></div>
     </div>
+    <div id="finmes"></div>
     <div class="searchbar"><span class="si">🔎</span><input id="txSearch" placeholder="Buscar nota, categoría, cuenta, monto…" autocomplete="off"><button id="txSearchClear" class="hidden">✕</button></div>
     <div class="txfilter"><button class="tf" id="tfCard">💳 Tarjetas</button><button class="tf" id="tfCash">💵 Contado</button><button class="tf on" id="tfAll">Todas</button></div>
     <div id="diario"></div>
@@ -570,6 +578,37 @@ function renderDiario(){
     if(per>0){dEl.innerHTML='<div class="dlbl">Podés gastar por día</div><div class="dval pos">'+money(per)+'</div><div class="dsub">'+dias+' día'+(dias===1?'':'s')+' restante'+(dias===1?'':'s')+' del mes · comprometido '+pct+'%</div><div class="dbar"><i style="width:'+pct+'%"></i></div>';dEl.classList.remove('hidden');}
     else dEl.classList.add('hidden');
   } else dEl.classList.add('hidden');
+  // ---- ¿Cómo se financió el mes? (déficit = deuda nueva + retiros de ahorro + uso de caja previa) ----
+  const fEl=$('#finmes');
+  if(q){fEl.innerHTML='';}
+  else{
+    const m2=ym(cur);const isHid=n=>{const a=acct(n);return a&&a.includeInTotal===false;};
+    const isOper=n=>{const a=acct(n);return a&&a.includeInTotal!==false&&a.type!=='Tarjetas de crédito';};
+    let I2=0,C2=0,compras=0,pagos=0,deAh=0,aAh=0;
+    DB.tx.forEach(t=>{if(ymOf(t.date)!==m2)return;const cu=t.currency||'ARS';
+      if(t.type==='income'&&!isCard(t.account))I2+=toARS(t.amount,cu)||0;
+      else if(t.type==='expense'){C2+=toARS(t.amount,cu)||0;if(isCard(t.account))compras+=toARS(t.amount,cu)||0;}
+      else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;const cto=curOf(t.to);
+        if(isCard(t.to)&&!isCard(t.from))pagos+=toARS(amtTo,cto)||0;
+        if(isHid(t.from)&&isOper(t.to))deAh+=toARS(amtTo,cto)||0;
+        if(isOper(t.from)&&isHid(t.to))aAh+=toARS(t.amount,cu)||0;}});
+    const deuda=compras-pagos,ahorro=deAh-aAh,res=I2-C2,caja=(C2-I2)-deuda-ahorro;
+    const row=(ico,lbl,v,posTxt,negTxt)=>{if(Math.abs(v)<0.5)return '';
+      return '<div class="finrow"><span>'+ico+' '+lbl+'</span><span class="'+(v>0?'neg':'pos')+'">'+(v>0?'+':'−')+money(Math.abs(v))+' <small>'+(v>0?posTxt:negTxt)+'</small></span></div>';};
+    let inner;
+    if(res<-0.5){
+      inner='<div class="finhead">El déficit de <b class="neg">'+money(-res)+'</b> se cubrió con:</div>'+
+        row('💳','Deuda nueva (tarjetas/préstamos)',deuda,'te endeudaste','bajaste deuda')+
+        row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
+        row('💰','Saldo previo en caja',caja,'usaste plata que ya tenías','quedó en caja');
+    } else {
+      inner='<div class="finhead">Superávit de <b class="pos">'+money(res)+'</b>. Destino:</div>'+
+        row('💳','Deuda (tarjetas/préstamos)',deuda,'sumaste deuda igual','bajaste deuda')+
+        row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
+        row('💰','Caja',caja,'usaste caja previa','quedó en caja');
+    }
+    fEl.innerHTML='<details class="fincard"><summary>¿Cómo se financió '+monthName(cur).split(' ')[0]+'? <span class="'+sgn(res)+'">'+(res>=0?'+':'−')+money(Math.abs(res))+'</span></summary>'+inner+'</details>';
+  }
   const enTarjeta=t=>t.type==='transfer'?(isCard(t.from)||isCard(t.to)):isCard(t.account);
   const flist=txFilter==='all'?list:list.filter(t=>txFilter==='card'?enTarjeta(t):!enTarjeta(t));
   ['tfCard','tfCash','tfAll'].forEach(id=>$('#'+id).classList.toggle('on',(id==='tfCard'&&txFilter==='card')||(id==='tfCash'&&txFilter==='cash')||(id==='tfAll'&&txFilter==='all')));
@@ -920,6 +959,20 @@ function renderCardsView(){  const cards=DB.accounts.filter(a=>a.type==='Tarjeta
   h+='<div class="acchero"><div class="ahlbl">Deuda total hoy (todas las cuotas por pagar)</div><div class="big neg">'+money(dNow)+'</div>'+
     '<div class="'+(delta<=0?'pos':'neg')+'" style="font-weight:700;font-size:13.5px;margin-bottom:2px">'+(delta<=0?'▼ Bajó ':'▲ Subió ')+money(Math.abs(delta))+' desde fin de '+finMesPasado.toLocaleDateString('es-AR',{month:'long'})+'</div>'+
     '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">Este mes: compras con tarjeta '+money(compras)+' · pagos '+money(pagosM)+'</div>'+dbars+'</div>';
+  // ---- Compromisos mensuales: vencimientos de tarjeta + recordatorios de cada mes ----
+  const compM=[];
+  for(let i=0;i<6;i++){const d=new Date(TODAY.getFullYear(),TODAY.getMonth()+i,1);const m=ym(d);
+    const tar=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&payMonthOf(t)===m).reduce((s,t)=>s+(toARS(t.amount,t.currency||'ARS')||0),0);
+    const rms=DB.reminders.filter(r=>r.type==='expense'&&remActiveIn(r,m)).reduce((s,r)=>s+(toARS(remAmount(r,m),curOf(r.account))||0),0);
+    compM.push({lab:d.toLocaleDateString('es-AR',{month:'long'}),tar:tar,rms:rms,tot:tar+rms});}
+  const compMax=Math.max(1,...compM.map(x=>x.tot));
+  h+='<div class="pj-sec"><span>Compromisos por mes (tarjetas + recordatorios)</span></div>';
+  h+='<div class="catlist" style="margin-bottom:12px">';
+  compM.forEach(x=>{
+    h+='<div class="catrow" style="cursor:default"><div class="crtop"><span style="text-transform:capitalize">'+x.lab+'</span><span><b class="neg">'+money(x.tot)+'</b></span></div>'+
+      '<div class="ds" style="font-size:11px;color:var(--muted);margin-bottom:5px">💳 tarjetas '+money(x.tar)+' · ⏰ recordatorios '+money(x.rms)+'</div>'+
+      '<div class="crbar"><i style="width:'+Math.round(x.tot/compMax*100)+'%;background:var(--expense)"></i></div></div>';});
+  h+='</div>';
   h+='<div class="pj-sec"><span>Resumen proyectado por tarjeta</span></div>';  h+='<div class="cardtblwrap"><table class="cardtbl">'+head+rows+totrow+'</table></div>';
   // categorías de los consumos pendientes (mes de pago >= mes actual)
   const pend=DB.tx.filter(t=>t.type==='expense'&&isCard(t.account)&&payMonthOf(t)>=MESACTUAL);
