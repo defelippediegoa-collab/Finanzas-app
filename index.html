@@ -264,7 +264,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v39</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v40</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -598,16 +598,17 @@ function renderDiario(){
     let inner;
     if(res<-0.5){
       inner='<div class="finhead">El déficit de <b class="neg">'+money(-res)+'</b> se cubrió con:</div>'+
-        row('💳','Deuda nueva (tarjetas/préstamos)',deuda,'te endeudaste','bajaste deuda')+
+        row('💳','Deuda nueva (tarjetas/préstamos)',deuda,'te endeudaste','bajaste deuda (le destinaste plata)')+
         row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
-        row('💰','Saldo previo en caja',caja,'usaste plata que ya tenías','quedó en caja');
+        row('💰','Caja acumulada',caja,'bajó la plata de tus cuentas','subió la plata de tus cuentas');
     } else {
       inner='<div class="finhead">Superávit de <b class="pos">'+money(res)+'</b>. Destino:</div>'+
         row('💳','Deuda (tarjetas/préstamos)',deuda,'sumaste deuda igual','bajaste deuda')+
         row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
-        row('💰','Caja',caja,'usaste caja previa','quedó en caja');
+        row('💰','Caja acumulada',caja,'bajó la plata de tus cuentas','subió la plata de tus cuentas');
     }
-    fEl.innerHTML='<details class="fincard"><summary>¿Cómo se financió '+monthName(cur).split(' ')[0]+'? <span class="'+sgn(res)+'">'+(res>=0?'+':'−')+money(Math.abs(res))+'</span></summary>'+inner+'</details>';
+    const remNote=rem>0?'<div style="padding:0 16px 12px;font-size:11px;color:var(--muted2)">Analiza solo movimientos reales. El balance de arriba además resta recordatorios pendientes ('+money(rem)+').</div>':'';
+    fEl.innerHTML='<details class="fincard"><summary>¿Cómo se financió '+monthName(cur).split(' ')[0]+'? <span class="'+sgn(res)+'">'+(res>=0?'+':'−')+money(Math.abs(res))+'</span></summary>'+inner+remNote+'</details>';
   }
   const enTarjeta=t=>t.type==='transfer'?(isCard(t.from)||isCard(t.to)):isCard(t.account);
   const flist=txFilter==='all'?list:list.filter(t=>txFilter==='card'?enTarjeta(t):!enTarjeta(t));
