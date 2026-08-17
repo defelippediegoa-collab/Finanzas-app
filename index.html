@@ -264,7 +264,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v40</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v41</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -592,23 +592,40 @@ function renderDiario(){
         if(isCard(t.to)&&!isCard(t.from))pagos+=toARS(amtTo,cto)||0;
         if(isHid(t.from)&&isOper(t.to))deAh+=toARS(amtTo,cto)||0;
         if(isOper(t.from)&&isHid(t.to))aAh+=toARS(t.amount,cu)||0;}});
-    const deuda=compras-pagos,ahorro=deAh-aAh,res=I2-C2,caja=(C2-I2)-deuda-ahorro;
+    const deuda=compras-pagos,ahorro=deAh-aAh;
+    let res,inner;
     const row=(ico,lbl,v,posTxt,negTxt)=>{if(Math.abs(v)<0.5)return '';
       return '<div class="finrow"><span>'+ico+' '+lbl+'</span><span class="'+(v>0?'neg':'pos')+'">'+(v>0?'+':'−')+money(Math.abs(v))+' <small>'+(v>0?posTxt:negTxt)+'</small></span></div>';};
-    let inner;
-    if(res<-0.5){
-      inner='<div class="finhead">El déficit de <b class="neg">'+money(-res)+'</b> se cubrió con:</div>'+
-        row('💳','Deuda nueva (tarjetas/préstamos)',deuda,'te endeudaste','bajaste deuda (le destinaste plata)')+
-        row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
-        row('💰','Caja acumulada',caja,'bajó la plata de tus cuentas','subió la plata de tus cuentas');
+    if(homeMode==='caja'){
+      // CAJA: salidas reales = gastos cash + pagos de tarjeta. La deuda nueva no mueve caja.
+      const salidas=(C2-compras)+pagos;res=I2-salidas;
+      const cajaC=(salidas-I2)-ahorro;
+      const ctx='<div style="padding:2px 16px 4px;font-size:11px;color:var(--muted2)">💳 Además compraste con tarjeta '+money(compras)+' que todavía no salió de caja (deuda a pagar después).</div>';
+      if(res<-0.5){
+        inner='<div class="finhead">Salió <b class="neg">'+money(-res)+'</b> más de lo que ingresó. Se cubrió con:</div>'+
+          row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
+          row('💰','Caja acumulada',cajaC,'bajó la plata de tus cuentas','subió la plata de tus cuentas')+(compras>0.5?ctx:'');
+      } else {
+        inner='<div class="finhead">Ingresó <b class="pos">'+money(res)+'</b> más de lo que salió. Destino:</div>'+
+          row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
+          row('💰','Caja acumulada',cajaC,'bajó la plata de tus cuentas','subió la plata de tus cuentas')+(compras>0.5?ctx:'');
+      }
     } else {
-      inner='<div class="finhead">Superávit de <b class="pos">'+money(res)+'</b>. Destino:</div>'+
-        row('💳','Deuda (tarjetas/préstamos)',deuda,'sumaste deuda igual','bajaste deuda')+
-        row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
-        row('💰','Caja acumulada',caja,'bajó la plata de tus cuentas','subió la plata de tus cuentas');
+      res=I2-C2;const caja=(C2-I2)-deuda-ahorro;
+      if(res<-0.5){
+        inner='<div class="finhead">El déficit de <b class="neg">'+money(-res)+'</b> se cubrió con:</div>'+
+          row('💳','Deuda nueva (tarjetas/préstamos)',deuda,'te endeudaste','bajaste deuda (le destinaste plata)')+
+          row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
+          row('💰','Caja acumulada',caja,'bajó la plata de tus cuentas','subió la plata de tus cuentas');
+      } else {
+        inner='<div class="finhead">Superávit de <b class="pos">'+money(res)+'</b>. Destino:</div>'+
+          row('💳','Deuda (tarjetas/préstamos)',deuda,'sumaste deuda igual','bajaste deuda')+
+          row('🐷','Ahorros',ahorro,'sacaste de ahorros','mandaste a ahorros')+
+          row('💰','Caja acumulada',caja,'bajó la plata de tus cuentas','subió la plata de tus cuentas');
+      }
     }
-    const remNote=rem>0?'<div style="padding:0 16px 12px;font-size:11px;color:var(--muted2)">Analiza solo movimientos reales. El balance de arriba además resta recordatorios pendientes ('+money(rem)+').</div>':'';
-    fEl.innerHTML='<details class="fincard"><summary>¿Cómo se financió '+monthName(cur).split(' ')[0]+'? <span class="'+sgn(res)+'">'+(res>=0?'+':'−')+money(Math.abs(res))+'</span></summary>'+inner+remNote+'</details>';
+    const remNote=rem>0?'<div style="padding:0 16px 12px;font-size:11px;color:var(--muted2)">Analiza solo movimientos reales. El balance de arriba además resta '+(homeMode==='caja'?'compromisos':'recordatorios')+' pendientes ('+money(rem)+').</div>':'';
+    fEl.innerHTML='<details class="fincard"><summary>¿Cómo se financió '+(homeMode==='caja'?'la caja de ':'')+monthName(cur).split(' ')[0]+'? <span class="'+sgn(res)+'">'+(res>=0?'+':'−')+money(Math.abs(res))+'</span></summary>'+inner+remNote+'</details>';
   }
   const enTarjeta=t=>t.type==='transfer'?(isCard(t.from)||isCard(t.to)):isCard(t.account);
   const flist=txFilter==='all'?list:list.filter(t=>txFilter==='card'?enTarjeta(t):!enTarjeta(t));
