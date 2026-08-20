@@ -276,7 +276,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v44</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v47</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -986,25 +986,35 @@ function renderPanel(){
   const m=ym(cur);
   const isHid=n=>{const a=acct(n);return a&&a.includeInTotal===false;};
   const isOper=n=>{const a=acct(n);return a&&a.includeInTotal!==false&&a.type!=='Tarjetas de crédito';};
-  let I=0,C=0,compras=0,pagos=0,deAh=0;
+  let I=0,C=0,compras=0,pagos=0,deAh=0,aAh=0;
   DB.tx.forEach(t=>{if(ymOf(t.date)!==m)return;const cu=t.currency||'ARS';
     if(t.type==='income'&&!isCard(t.account))I+=toARS(t.amount,cu)||0;
     else if(t.type==='expense'){C+=toARS(t.amount,cu)||0;if(isCard(t.account))compras+=toARS(t.amount,cu)||0;}
     else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;
       if(isCard(t.to)&&!isCard(t.from))pagos+=toARS(amtTo,curOf(t.to))||0;
-      if(isHid(t.from)&&isOper(t.to))deAh+=toARS(amtTo,curOf(t.to))||0;}});
+      if(isHid(t.from)&&isOper(t.to))deAh+=toARS(amtTo,curOf(t.to))||0;
+      if(isOper(t.from)&&isHid(t.to))aAh+=toARS(t.amount,cu)||0;}});
   const cash=C-compras;
   const remPend=remDebtARS(m);
   let venc=0;DB.accounts.forEach(a=>{if(a.type!=='Tarjetas de crédito'||a.includeInTotal===false)return;venc+=toARS(cardSaldos(a.name).aPagar,a.currency)||0;});
   let h='<div class="panelgrid">';
   if(panelMode==='caja'){
-    const salidas=cash+pagos;const bal=I-salidas;
-    h+=pcard('pc-violet','👛','SALDO ACTUAL',money(capitalNow()),'','disponible en tus cuentas');
-    h+=pcard('pc-green','📈','INGRESOS DEL MES',money(I),'pos',deAh>0?('🐷 + '+money(deAh)+' recibido de ahorros'):'');
+    const salidas=cash+pagos;const bal=I-salidas;const balCon=bal+deAh-aAh;
+    let subSaldo='disponible en tus cuentas';
+    if(ym(cur)===ym(TODAY)){
+      const D=new Date(cur.getFullYear(),cur.getMonth(),1);let ini=0;
+      DB.accounts.forEach(a=>{if(a.includeInTotal===false||a.type==='Tarjetas de crédito')return;const b=toARS((a.initial||0)+effects(a.name,t=>new Date(t.date+'T12:00:00')<D),a.currency);if(b==null||b<0)return;ini+=b;});
+      const varReal=capitalNow()-ini;
+      subSaldo='el 1° tenías '+money(ini)+' → variación real <b class="'+sgn(varReal)+'">'+(varReal>=0?'+':'−')+money(Math.abs(varReal))+'</b>';
+    }
+    h+=pcard('pc-violet','👛','SALDO ACTUAL',money(capitalNow()),'',subSaldo);
+    const ahNeto=deAh-aAh;
+    const subIng=(deAh>0||aAh>0)?('🐷 '+(ahNeto>=0?'desahorraste ':'ahorraste ')+'<b>'+money(Math.abs(ahNeto))+'</b> neto (sacaste '+money(deAh)+' · mandaste '+money(aAh)+') — no suma al balance'):'';
+    h+=pcard('pc-green','📈','INGRESOS DEL MES',money(I),'pos',subIng);
     h+=pcard('pc-red','📉','GASTOS DEL MES',money(cash),'neg','en efectivo / cuentas');
     h+=pcard('pc-blue','💳','PAGADO DE TARJETA',money(pagos),'','vencimientos que ya pagaste');
     h+=pcard('pc-amber','⏰','RECORDATORIOS PEND.',money(remPend),'','del mes, sin tildar');
-    h+=pcard(bal>=0?'pc-green':'pc-red','🧮','BALANCE DE CAJA',money(bal),sgn(bal),'ingresos − salidas del mes');
+    h+=pcard(bal>=0?'pc-green':'pc-red','🧮','BALANCE DE CAJA',money(bal),sgn(bal),(deAh>0||aAh>0)?('con mov. de ahorros: <b class="'+sgn(balCon)+'">'+(balCon>=0?'+':'−')+money(Math.abs(balCon))+'</b> en tus cuentas'):'ingresos − salidas del mes');
   } else {
     const bal=I-C-remPend;
     h+=pcard(bal>=0?'pc-green':'pc-red','🧮','BALANCE DEL MES',money(bal),sgn(bal),'ingresos − gastos − record. pend.');
