@@ -286,7 +286,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v53</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v54</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -617,13 +617,13 @@ function renderDiario(){
     const m2=ym(cur);const isHid=n=>{const a=acct(n);return a&&a.includeInTotal===false;};
     const isOper=n=>{const a=acct(n);return a&&a.includeInTotal!==false&&a.type!=='Tarjetas de crédito';};
     let I2=0,C2=0,compras=0,pagos=0,deAh=0,aAh=0;
-    DB.tx.forEach(t=>{if(ymOf(t.date)!==m2)return;const cu=t.currency||'ARS';
-      if(t.type==='income'&&!isCard(t.account))I2+=toARS(t.amount,cu)||0;
-      else if(t.type==='expense'){C2+=toARS(t.amount,cu)||0;if(isCard(t.account))compras+=toARS(t.amount,cu)||0;}
-      else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;const cto=curOf(t.to);
-        if(isCard(t.to)&&!isCard(t.from))pagos+=toARS(amtTo,cto)||0;
-        if(isHid(t.from)&&isOper(t.to))deAh+=toARS(amtTo,cto)||0;
-        if(isOper(t.from)&&isHid(t.to))aAh+=toARS(t.amount,cu)||0;}});
+    DB.tx.forEach(t=>{if(ymOf(t.date)!==m2)return;const cu=t.currency||'ARS';const ars=toARS(t.amount,cu)||0;
+      if(t.type==='income'&&!isCard(t.account)){I2+=ars;if(isHid(t.account))aAh+=ars;}
+      else if(t.type==='expense'){C2+=ars;if(isCard(t.account))compras+=ars;else if(isHid(t.account))deAh+=ars;}
+      else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;const vTo=toARS(amtTo,curOf(t.to))||0;
+        if(isCard(t.to)&&!isCard(t.from)){pagos+=vTo;if(isHid(t.from))deAh+=vTo;}
+        if(isHid(t.from)&&isOper(t.to))deAh+=vTo;
+        if(isOper(t.from)&&isHid(t.to))aAh+=ars;}});
     const deuda=compras-pagos,ahorro=deAh-aAh;
     let res,inner;
     const row=(ico,lbl,v,posTxt,negTxt)=>{if(Math.abs(v)<0.5)return '';
@@ -999,13 +999,13 @@ function renderPanel(){
   const isHid=n=>{const a=acct(n);return a&&a.includeInTotal===false;};
   const isOper=n=>{const a=acct(n);return a&&a.includeInTotal!==false&&a.type!=='Tarjetas de crédito';};
   let I=0,C=0,compras=0,pagos=0,deAh=0,aAh=0;
-  DB.tx.forEach(t=>{if(ymOf(t.date)!==m)return;const cu=t.currency||'ARS';
-    if(t.type==='income'&&!isCard(t.account))I+=toARS(t.amount,cu)||0;
-    else if(t.type==='expense'){C+=toARS(t.amount,cu)||0;if(isCard(t.account))compras+=toARS(t.amount,cu)||0;}
-    else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;
-      if(isCard(t.to)&&!isCard(t.from))pagos+=toARS(amtTo,curOf(t.to))||0;
-      if(isHid(t.from)&&isOper(t.to))deAh+=toARS(amtTo,curOf(t.to))||0;
-      if(isOper(t.from)&&isHid(t.to))aAh+=toARS(t.amount,cu)||0;}});
+  DB.tx.forEach(t=>{if(ymOf(t.date)!==m)return;const cu=t.currency||'ARS';const ars=toARS(t.amount,cu)||0;
+    if(t.type==='income'&&!isCard(t.account)){I+=ars;if(isHid(t.account))aAh+=ars;}
+    else if(t.type==='expense'){C+=ars;if(isCard(t.account))compras+=ars;else if(isHid(t.account))deAh+=ars;}
+    else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;const vTo=toARS(amtTo,curOf(t.to))||0;
+      if(isCard(t.to)&&!isCard(t.from)){pagos+=vTo;if(isHid(t.from))deAh+=vTo;}
+      if(isHid(t.from)&&isOper(t.to))deAh+=vTo;
+      if(isOper(t.from)&&isHid(t.to))aAh+=ars;}});
   const cash=C-compras;
   const remPend=remDebtARS(m);
   let venc=0;DB.accounts.forEach(a=>{if(a.type!=='Tarjetas de crédito'||a.includeInTotal===false)return;venc+=toARS(cardSaldos(a.name).aPagar,a.currency)||0;});
@@ -1163,11 +1163,11 @@ function openCajaConcil(){
   const isOperN=n=>{const a=acct(n);return a&&a.includeInTotal!==false&&a.type!=='Tarjetas de crédito';};
   let I=0,cash=0,pagos=0,deAh=0,aAh=0,gOc=0,iOc=0;const gOcRows=[],iOcRows=[],fxN=[];
   DB.tx.forEach(t=>{if(ymOf(t.date)!==m)return;const cu=t.currency||'ARS';const ars=toARS(t.amount,cu)||0;
-    if(t.type==='income'&&!isCard(t.account)){I+=ars;if(isHidN(t.account)){iOc+=ars;iOcRows.push(t);}}
-    else if(t.type==='expense'&&!isCard(t.account)){cash+=ars;if(isHidN(t.account)){gOc+=ars;gOcRows.push(t);}}
-    else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;
-      if(isCard(t.to)&&!isCard(t.from))pagos+=toARS(amtTo,curOf(t.to))||0;
-      if(isHidN(t.from)&&isOperN(t.to))deAh+=toARS(amtTo,curOf(t.to))||0;
+    if(t.type==='income'&&!isCard(t.account)){I+=ars;if(isHidN(t.account)){iOc+=ars;iOcRows.push(t);aAh+=ars;}}
+    else if(t.type==='expense'&&!isCard(t.account)){cash+=ars;if(isHidN(t.account)){gOc+=ars;gOcRows.push(t);deAh+=ars;}}
+    else if(t.type==='transfer'){const amtTo=t.amountTo!=null?t.amountTo:t.amount;const vTo=toARS(amtTo,curOf(t.to))||0;
+      if(isCard(t.to)&&!isCard(t.from)){pagos+=vTo;if(isHidN(t.from))deAh+=vTo;}
+      if(isHidN(t.from)&&isOperN(t.to))deAh+=vTo;
       if(isOperN(t.from)&&isHidN(t.to))aAh+=ars;
       if((curOf(t.from)||'ARS')!==(curOf(t.to)||'ARS'))fxN.push(t);}});
   const balCon=I-cash-pagos+deAh-aAh;
@@ -1181,17 +1181,17 @@ function openCajaConcil(){
       const b0=toARS((a.initial||0)+effects(a.name,t=>new Date(t.date+'T12:00:00')<D0),a.currency);
       const b1=toARS(liveBalance(a.name),a.currency);
       if(b0!=null&&b0>0)ini+=b0;if(b1!=null&&b1>0)fin+=b1;});
-    const varReal=fin-ini,diff=varReal-balCon,resto=diff-gOc+iOc;
+    const varReal=fin-ini,diff=varReal-balCon,resto=diff;
     h='<div class="finhead" style="border-top:none;padding-top:8px">Dos formas de medir el mes:</div>'+
       '<div class="finrow"><span>Variación real de tus cuentas</span><span class="'+sgn(varReal)+'">'+(varReal>=0?'+':'−')+money(Math.abs(varReal))+'</span></div>'+
       '<div class="finrow"><span>Balance de flujos (con ahorros)</span><span class="'+sgn(balCon)+'">'+(balCon>=0?'+':'−')+money(Math.abs(balCon))+'</span></div>'+
       '<div class="finrow" style="border-top:1px solid var(--line);padding-top:9px"><span><b>Diferencia a explicar</b></span><span><b>'+(diff>=0?'+':'−')+money(Math.abs(diff))+'</b></span></div>';
-    if(gOc>0){h+='<div class="finhead">🙈 Gastos pagados desde cuentas ocultas ('+money(gOc)+') — cuentan como gasto pero no salieron de tu caja:</div>';
+    if(gOc>0){h+='<div class="finhead">🙈 Gastos pagados desde cuentas ocultas ('+money(gOc)+') — ya integrados como desahorro:</div>';
       gOcRows.forEach(t=>{h+='<div class="finrow"><span>'+esc(stripInst(t.note)||t.sub||t.category||'—')+' <small style="color:var(--muted2)">'+esc(t.account)+' · '+t.date+'</small></span><span class="neg">'+money(t.amount,t.currency||'ARS')+'</span></div>';});}
-    if(iOc>0){h+='<div class="finhead">Ingresos cobrados en cuentas ocultas ('+money(iOc)+') — cuentan como ingreso pero no entraron a tu caja:</div>';
+    if(iOc>0){h+='<div class="finhead">Ingresos cobrados en cuentas ocultas ('+money(iOc)+') — ya integrados como ahorro:</div>';
       iOcRows.forEach(t=>{h+='<div class="finrow"><span>'+esc(t.note||t.category||'ingreso')+' <small style="color:var(--muted2)">'+esc(t.account)+' · '+t.date+'</small></span><span class="pos">'+money(t.amount,t.currency||'ARS')+'</span></div>';});}
-    if(Math.abs(resto)>1)h+='<div class="finhead">Resto sin asignar: <b>'+(resto>=0?'+':'−')+money(Math.abs(resto))+'</b> — típicamente conversiones de dólar'+(fxN.length?' ('+fxN.length+' transferencias con cambio de moneda este mes)':'')+' o cuentas que quedaron en negativo.</div>';
-    if(gOc===0&&iOc===0&&Math.abs(resto)<=1)h+='<div class="finhead">✓ Todo conciliado, no hay movimientos raros.</div>';
+    if(Math.abs(resto)>1)h+='<div class="finhead">Diferencia restante: <b>'+(resto>=0?'+':'−')+money(Math.abs(resto))+'</b> — típicamente conversiones de dólar valuadas al cambio de hoy'+(fxN.length?' ('+fxN.length+' transferencias con cambio de moneda este mes)':'')+', cuentas en negativo, o algún movimiento mal cargado (revisá cuenta de origen/destino).</div>';
+    if(Math.abs(resto)<=1)h+='<div class="finhead">✓ Todo conciliado.</div>';
   }
   $('#cardDetTitle').textContent='Conciliación de caja · '+monthName(cur).split(' ')[0];
   $('#cardDetBody').innerHTML=h+'<div style="height:14px"></div>';
