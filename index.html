@@ -72,6 +72,13 @@
   .pc-blue{background:rgba(96,150,240,.08);border-color:rgba(96,150,240,.3)}.pc-blue .pcl{color:#7fa8f2}
   .pc-amber{background:rgba(245,182,66,.07);border-color:rgba(245,182,66,.3)}.pc-amber .pcl{color:var(--warn)}
   .pc-violet{background:rgba(124,108,240,.09);border-color:rgba(124,108,240,.32)}.pc-violet .pcl{color:var(--accent)}
+  .stcard{margin:12px 16px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .strow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 16px;font-size:13px;border-bottom:1px solid var(--line)}
+  .strow span:last-child{font-weight:600;white-space:nowrap}
+  .strow small{display:block;color:var(--muted2);font-size:10.5px;font-weight:400;margin-top:2px;line-height:1.35}
+  .strow.strong{background:rgba(255,255,255,.025)}
+  .strow.strong span{font-weight:800;font-size:13.5px}
+  .warnc{color:var(--warn)}
   .cardtblwrap{margin:0 16px 12px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;overflow-x:auto}
   .cardtbl{border-collapse:collapse;width:100%;min-width:520px;font-size:11.5px}
   .cardtbl th,.cardtbl td{padding:8px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
@@ -279,7 +286,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v51</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v53</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -314,6 +321,7 @@
 
   <div class="view hidden" id="view-panel">
     <div class="txfilter" style="padding:12px 16px 2px"><button class="tf" id="pmCaja">Panel de caja</button><button class="tf" id="pmMes">Panel del mes</button></div>
+    <div class="txfilter" style="padding:6px 16px 0"><button class="tf" id="psCards">🔲 Vista tarjetas</button><button class="tf" id="psDet">📄 Vista detalle</button></div>
     <div id="panelBody"></div>
   </div>
 
@@ -983,6 +991,7 @@ function openCategoryDetail(cat){
 function render(){$('#curM').textContent=monthName(cur);if(view==='trans')renderDiario();else if(view==='stats')renderStats();else if(view==='acc')renderAccounts();else if(view==='proj')renderReminders();else if(view==='cards')renderCardsView();else if(view==='panel')renderPanel();}
 /* ---------- PANEL (tablero) ---------- */
 let panelMode=localStorage.getItem('fin_panel_mode')||'caja';
+let panelStyle=localStorage.getItem('fin_panel_style')||'cards';
 function pcard(cls,ico,lbl,val,valCls,sub,id){return '<div class="pcard '+cls+'"'+(id?' id="'+id+'" style="cursor:pointer"':'')+'><div class="pcl">'+lbl+' <span class="pci">'+ico+'</span></div><div class="pcv '+(valCls||'')+'">'+val+'</div>'+(sub?'<div class="pcs">'+sub+'</div>':'')+'</div>';}
 function renderPanel(){
   $('#pmCaja').classList.toggle('on',panelMode==='caja');$('#pmMes').classList.toggle('on',panelMode==='mes');
@@ -1001,6 +1010,52 @@ function renderPanel(){
   const remPend=remDebtARS(m);
   let venc=0;DB.accounts.forEach(a=>{if(a.type!=='Tarjetas de crédito'||a.includeInTotal===false)return;venc+=toARS(cardSaldos(a.name).aPagar,a.currency)||0;});
   let h='<div class="panelgrid">';
+  $('#psCards').classList.toggle('on',panelStyle==='cards');$('#psDet').classList.toggle('on',panelStyle==='det');
+  if(panelStyle==='det'){
+    // ---- VISTA DETALLE: estado de cuenta en cascada ----
+    const D0=new Date(cur.getFullYear(),cur.getMonth(),1);
+    let ini=0;DB.accounts.forEach(a=>{if(a.includeInTotal===false||a.type==='Tarjetas de crédito')return;const b=toARS((a.initial||0)+effects(a.name,t=>new Date(t.date+'T12:00:00')<D0),a.currency);if(b==null||b<0)return;ini+=b;});
+    const ahNeto=deAh-aAh;
+    const esHoy=ym(cur)===ym(TODAY);
+    const stRow=(lbl,pref,v,cls,sub)=>'<div class="strow"><span>'+lbl+(sub?'<small>'+sub+'</small>':'')+'</span><span class="'+(cls||'')+'">'+pref+money(Math.abs(v))+'</span></div>';
+    const stTot=(lbl,v,sub)=>'<div class="strow strong"><span>'+lbl+(sub?'<small>'+sub+'</small>':'')+'</span><span class="'+sgn(v)+'">'+money(v)+'</span></div>';
+    const ingProy=DB.reminders.filter(r=>r.type==='income'&&remActiveIn(r,ym(cur))&&!DB.paid['rem:'+r.id+':'+ym(cur)]).reduce((s2,r)=>s2+(toARS(remAmount(r,ym(cur)),curOf(r.account))||0),0);
+    let hidT=0;DB.accounts.forEach(a=>{if(a.includeInTotal!==false)return;const raw=a.type==='Tarjetas de crédito'?-cardSaldos(a.name).aPagar:liveBalance(a.name);const b=toARS(raw,a.currency);if(b!=null)hidT+=b;});
+    const hidCard='<div class="stcard" style="margin-top:10px"><div class="strow strong"><span>🔒 Cuentas ocultas (ahorros, en pesos)</span><span class="'+sgn(hidT)+'">'+money(hidT)+'</span></div></div>';
+    let s='';
+    if(panelMode==='caja'){
+      const calc=ini+I+ahNeto-pagos-cash;
+      const real=esHoy?capitalNow():null;
+      const dif=real!=null?(real-calc):null;
+      s='<div class="stcard">';
+      s+=stRow('Saldo inicial del mes',(ini>=0?'+':'−'),ini,sgn(ini));
+      s+=stRow('Ingresos del mes','+',I,'pos');
+      s+=stRow('Transferencias con ahorros (neto)',(ahNeto>=0?'+':'−'),ahNeto,ahNeto>=0?'pos':'neg','sacaste '+money(deAh)+' · mandaste '+money(aAh));
+      s+=stRow('Pagos a tarjetas (liquidaciones)','−',pagos,'neg');
+      s+=stRow('Gastos del mes (contado)','−',cash,'neg');
+      s+=stTot('BALANCE DE CAJA DEL MES',calc,real!=null?('saldo real hoy: '+money(real)+(Math.abs(dif)>1?' · diferencia '+(dif>=0?'+':'−')+money(Math.abs(dif))+' (tocá Balance de caja en vista tarjetas para conciliar)':' ✓ coincide')):'saldo teórico al cierre del mes');
+      s+=stRow('Recordatorios no ejecutados','−',remPend,'warnc');
+      s+=stRow('Ingresos proyectados (recordatorios)','+',ingProy,'pos');
+      s+=stTot('BALANCE DE CAJA PROYECTADO',calc-remPend+ingProy);
+      s+='</div>'+hidCard;
+    } else {
+      const prevM=ym(new Date(cur.getFullYear(),cur.getMonth()-1,1));
+      let prevCompras=0;DB.tx.forEach(t=>{if(t.type==='expense'&&isCard(t.account)&&ymOf(t.date)===prevM)prevCompras+=toARS(t.amount,t.currency||'ARS')||0;});
+      const d=compras-prevCompras;
+      const bal=I-cash-remPend-compras;
+      s='<div class="stcard">';
+      s+=stRow('Ingresos del mes','+',I,'pos');
+      s+=stRow('Gastos del mes (contado)','−',cash,'neg');
+      s+=stRow('Recordatorios no ejecutados','−',remPend,'warnc');
+      s+=stRow('Gastos con tarjeta del mes','−',compras,'neg','mes pasado (lo que liquidás ahora): '+money(prevCompras)+' · '+(d>=0?'▲ +':'▼ −')+money(Math.abs(d)));
+      s+=stTot('BALANCE DEL MES',bal);
+      s+=stRow('Ingresos proyectados (recordatorios)','+',ingProy,'pos');
+      s+=stTot('BALANCE DEL MES PROYECTADO',bal+ingProy);
+      s+='</div>'+hidCard;
+    }
+    $('#panelBody').innerHTML=s;
+    return;
+  }
   if(panelMode==='caja'){
     const salidas=cash+pagos;const bal=I-salidas;const balCon=bal+deAh-aAh;
     let subSaldo='disponible en tus cuentas';
@@ -1144,6 +1199,8 @@ function openCajaConcil(){
 }
 $('#pmCaja').onclick=()=>{panelMode='caja';localStorage.setItem('fin_panel_mode','caja');renderPanel();};
 $('#pmMes').onclick=()=>{panelMode='mes';localStorage.setItem('fin_panel_mode','mes');renderPanel();};
+$('#psCards').onclick=()=>{panelStyle='cards';localStorage.setItem('fin_panel_style','cards');renderPanel();};
+$('#psDet').onclick=()=>{panelStyle='det';localStorage.setItem('fin_panel_style','det');renderPanel();};
 // Fecha de compra de un movimiento: la real, o reconstruida restando (i−1) meses a la cuota (i/N)
 function shiftMonthStr(dstr,k){const y=+dstr.slice(0,4),m=+dstr.slice(5,7),day=+dstr.slice(8,10);
   const tot=y*12+(m-1)+k,y2=Math.floor(tot/12),m2=tot%12;
