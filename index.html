@@ -286,7 +286,7 @@
     <div class="div"></div>
     <button id="demoBtn">Cargar ejemplo de prueba</button>
     <button id="wipeBtn" style="color:var(--expense)">Borrar todo</button>
-    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v54</div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;padding:8px 0 2px">Versión v55</div>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
 
@@ -1024,14 +1024,17 @@ function renderPanel(){
     const hidCard='<div class="stcard" style="margin-top:10px"><div class="strow strong"><span>🔒 Cuentas ocultas (ahorros, en pesos)</span><span class="'+sgn(hidT)+'">'+money(hidT)+'</span></div></div>';
     let s='';
     if(panelMode==='caja'){
-      const calc=ini+I+ahNeto-pagos-cash;
+      const esFut=ym(cur)>ym(TODAY);
+      let vencM=0;if(esFut)DB.tx.forEach(t=>{if(t.type==='expense'&&isCard(t.account)&&payMonthOf(t)===ym(cur))vencM+=toARS(t.amount,t.currency||'ARS')||0;});
+      const calc=ini+I+ahNeto-pagos-cash-vencM;
       const real=esHoy?capitalNow():null;
       const dif=real!=null?(real-calc):null;
       s='<div class="stcard">';
-      s+=stRow('Saldo inicial del mes',(ini>=0?'+':'−'),ini,sgn(ini));
+      s+=stRow('Saldo inicial del mes',(ini>=0?'+':'−'),ini,sgn(ini),esFut?'proyectado con los movimientos ya cargados':'');
       s+=stRow('Ingresos del mes','+',I,'pos');
       s+=stRow('Transferencias con ahorros (neto)',(ahNeto>=0?'+':'−'),ahNeto,ahNeto>=0?'pos':'neg','sacaste '+money(deAh)+' · mandaste '+money(aAh));
       s+=stRow('Pagos a tarjetas (liquidaciones)','−',pagos,'neg');
+      if(esFut)s+=stRow('Vencimientos de tarjeta a liquidar','−',vencM,'neg','cuotas y consumos con mes de pago '+monthName(cur).split(' ')[0]);
       s+=stRow('Gastos del mes (contado)','−',cash,'neg');
       s+=stTot('BALANCE DE CAJA DEL MES',calc,real!=null?('saldo real hoy: '+money(real)+(Math.abs(dif)>1?' · diferencia '+(dif>=0?'+':'−')+money(Math.abs(dif))+' (tocá Balance de caja en vista tarjetas para conciliar)':' ✓ coincide')):'saldo teórico al cierre del mes');
       s+=stRow('Recordatorios no ejecutados','−',remPend,'warnc');
